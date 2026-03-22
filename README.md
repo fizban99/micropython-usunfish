@@ -1,4 +1,4 @@
-# micropython-sunfish
+# micropython-uSunfish
 
 MicroPython uSunfish Chess Engine
 
