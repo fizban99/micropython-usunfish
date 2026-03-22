@@ -50,7 +50,7 @@ def render_mv(mv, turn=0):
 
 def print_pos():
     for a in range(8):
-        print(" ", 8 - a, " ".join(mapping[u.position[0][a * 8 + b]] for b in range(8)))
+        print(" ", 8 - a, " ".join(mapping[u.position[0][a * 8 + b]].replace(" ",".") for b in range(8)))
     print("    a b c d e f g h ")
 
 u.history = []
