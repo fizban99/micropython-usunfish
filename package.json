@@ -1,0 +1,9 @@
+{
+  "urls": [
+    ["sunfish.py", "github:fizban99/micropython-usunfish/sunfish.py"],
+    ["usunfish_data.py", "github:fizban99/micropython-usunfish/usunfish_data.py"],
+    ["usunfish_engine.py", "github:fizban99/micropython-usunfish/usunfish_engine.py"],
+    ["usunfish_gmv.py", "github:fizban99/micropython-usunfish/usunfish_gmv.py"]
+  ],
+  "version": "0.1"
+}
