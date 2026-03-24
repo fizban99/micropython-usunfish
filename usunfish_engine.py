@@ -1,6 +1,6 @@
 from time import time as monotonic
 from random import randint, seed
-seed(monotonic())
+seed(int(monotonic()))
 
 from usunfish_data import *
 from usunfish_gmv import parse_sibl, makes_check, gen_moves, value
