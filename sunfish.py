@@ -7,7 +7,7 @@ _A1 = const(56)
 # level 0 will make really dumm moves
 # default 2 is around 2 seconds thinking
 # every step increase will double the thinking time
-_LEVEL = const(2) 
+LEVEL = 2
 mapping = "PNBRQK  pnbrqk  "
 _PROM = "NBRQ"
 _MT_LW = const(12680)
@@ -122,9 +122,9 @@ def main():
         if is_end:
             break
 
-        lvl = _LEVEL-1
+        lvl = LEVEL-1
         bmv = 0
-        u.max_nodes = 125 << lvl
+        u.max_nodes = 125 if lvl<0 else 125*(1<<lvl)
         gmvs = u.g_mv()
         gm = [x & 16383 for x in gmvs]
 
