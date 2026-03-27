@@ -203,7 +203,7 @@ def game(iboard=None):
         if is_end > _CHECK:
             return True  # Player won
 
-        lvl = _LEVEL-1
+        lvl = LEVEL-1
         bmv = 0
         u.max_nodes = 125 << lvl
         gmvs = u.g_mv()
