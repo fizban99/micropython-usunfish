@@ -1,7 +1,7 @@
 from time import time as monotonic
 import usunfish_engine as u
 import gc
-
+gc.collect()
 _A1 = const(56)
 # level from 0 to 7 
 # level 0 will make really dumm moves
@@ -203,7 +203,7 @@ def game(iboard=None):
         if is_end > _CHECK:
             return True  # Player won
 
-        lvl = _LEVEL-1
+        lvl = LEVEL-1
         bmv = 0
         u.max_nodes = 125 << lvl
         gmvs = u.g_mv()

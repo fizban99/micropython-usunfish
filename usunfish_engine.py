@@ -2,10 +2,11 @@ from time import time as monotonic
 from random import randint, seed
 seed(int(monotonic()))
 
+import gc
 from usunfish_data import *
 from usunfish_gmv import parse_sibl, makes_check, gen_moves, value
 import usunfish_gmv as ugmv
-
+gc.collect()
 # initial bytes of the opening tables
 _OP_IND2 = const(0)
 _OP_IND = const(1)

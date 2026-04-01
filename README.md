@@ -18,7 +18,7 @@ This fork has the following enhancements:
 - It uses a small hash table to reduce node traversal time during sequential iterations of the iterative deepening MTD-bi search. The table stores only fail-high moves and employs a simple age-based replacement algorithm.
 - It includes a small opening book of 1,768 plies derived from the Balsa_270423.pgn and Unique v110225 openings files.
 - As a reply of non-common openings, it has 5 different answers to non-common starting positions using the 400 moves.pgn file from https://www.scacchi64.com/downloads.html
-- The strength is set through the number of nodes evaluated. From level 1 (128 nodes) to level 7 (8192). At level 7 it is calibrated to just below 2100 Elo when playing against the Stockfish engine configured to simulate that rating and it takes around 60 seconds per move on a standard ESP32. Setting it to level 0, it plays at an extremely easy level. The level can be set in the `sunfish.py` file.
+- The strength is set through the number of nodes evaluated. From level 1 (125 nodes) to level 7 (8000). At level 7 it is calibrated to just below 2100 Elo when playing against the Stockfish engine configured to simulate that rating and it takes around 60 seconds per move on a standard ESP32. Setting it to level 0, it plays at an extremely easy level. The level can be set in the `sunfish.py` file.
 - This version incorporates 
     - Additional mobility evaluation, including double bishops, open/semiopen files, king safety and advanced pawns.
     - Enhanced but basic move ordering with
