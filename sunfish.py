@@ -55,8 +55,6 @@ def print_pos():
 
 u.history = []
 
-def upd_hist():
-    u.history.append(u.ghash())
 
 def g_gm1():
     global gm
@@ -94,10 +92,8 @@ def main():
     while True:
         mv = None
         gm = [x & 16383 for x in u.g_mv()]
-
         if best_move:
             print("My move:", best_move)
-            upd_hist()
             is_end = is_end_game()
             print(MESSAGES[is_end])     
             if is_end:
@@ -115,7 +111,6 @@ def main():
                 print("Please enter a move like g8f6")
 
         u.mk_mv(mv)
-        upd_hist()
         u.rotate(); print_pos(); u.rotate()
         is_end = is_end_game()
         print(MESSAGES[is_end])
@@ -153,7 +148,6 @@ def game(iboard=None):
     u.op_mode = 1    
     u.op_ind = _OP_IND 
     u.max_qs = _MAX_QS 
-    u.history = [u.ghash()]
     if iboard:
         u.last_mv = 15
         u.ply=2        
@@ -168,14 +162,13 @@ def game(iboard=None):
                       0, # mobility 
                         ] 
         
-    upd_hist()
     best_move = None
     amove = None
     is_end = False
     while True:
         gc.collect()
+        print(u.history)
         if best_move:
-            upd_hist()
             is_end = is_end_game()
 
         # Yield current board state and last black move (if any)
@@ -193,7 +186,6 @@ def game(iboard=None):
                 move = parse(amove[:2]) << 8 | parse(amove[2:4])
 
         u.mk_mv(move)
-        upd_hist()
         # After our move we rotate the board and print it again.
         # This allows us to see the effect of our move.
         u.rotate()

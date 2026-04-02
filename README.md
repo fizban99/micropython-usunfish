@@ -205,3 +205,7 @@ board, progressing left to right then by row downwards.
 
 This takes a 64 element `bytes` object and returns the engine's internal representation of a board.
 The format of the `bytes` object is described above in "inverted play".
+
+# The UCI interface
+
+The file uci.py implements a simple UCI interface that can be used with any UCI-compatible user interface. It currently only supports the `skill_level` option and does not include any time management, always playing at the specified skill level.

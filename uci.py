@@ -53,14 +53,20 @@ def render_mv(mv, turn=0):
     return render(i) + render(j) + prom
 
 
-mapping = 'PNBRQK. pnbrqk. '
-
+mapping = 'PNBRQK. pnbrqk. '    
+version = f"uSunfish 2026.1 level {LEVEL}"
 
 while True:
-    version = "uSunfish 2026.1"
-    args = input().split()
+    line = sys.stdin.readline()
+    if not line:
+        break
+    line = line.strip()
+    if not line:
+        continue
+    args = line.split()
     if args[0] == "uci":
         print("id name", version)
+        print("option name Skill_Level type spin default 7 min 0 max 7")
         print("uciok")
 
     elif args[0] == "isready":
@@ -68,6 +74,9 @@ while True:
 
     elif args[0] == "quit":
         break
+
+    elif args[0].strip().lower()[:32] == "setoption name skill_level value":
+        LEVEL = args[0].strip.lower()[-1]
 
     elif args[:2] == ["position", "startpos"]:
         u.op_mode = 1
