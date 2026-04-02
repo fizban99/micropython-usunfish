@@ -167,7 +167,6 @@ def game(iboard=None):
     is_end = False
     while True:
         gc.collect()
-        print(u.history)
         if best_move:
             is_end = is_end_game()
 
