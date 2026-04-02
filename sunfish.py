@@ -193,6 +193,7 @@ def game(iboard=None):
         u.rotate()
         is_end = is_end_game()
         if is_end > _CHECK:
+            print(MESSAGES[is_end])  
             return True  # Player won
 
         lvl = LEVEL-1
