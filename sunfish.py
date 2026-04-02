@@ -173,6 +173,7 @@ def game(iboard=None):
         # Yield current board state and last black move (if any)
         amove = yield u.position[0], best_move  # Await a move
         if is_end > _CHECK:
+            print(MESSAGES[is_end])   
             return False # StopIteration: player lost
 
         best_move = None
