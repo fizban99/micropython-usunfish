@@ -1,5 +1,12 @@
 from time import time as monotonic
 from random import randint, seed
+try:
+    import micropython
+except ImportError:
+    def const(x):
+        return x
+from binascii import crc32
+
 seed(int(monotonic()))
 
 import gc
@@ -127,15 +134,12 @@ def ghash():
     """Generate a hash from the board
     and store it as a smallint of 31 bits (30 bit + sign bit)
     Since the micropython hash is quite simple and it is
-    16 bits for bytes, we need to combine two hashes
+    16 bits for bytes, we use crc32 instead
     """
     board, ksq, wc_bc_ep_kp, pscore, _  = position
-    h1 = bytes([((board[i] << 4))+1 | (board[i+1]+1) for i in range(0, 64, 2)])
-    h2 = (hash(bytes(reversed(h1)))  & 0xFFFF)^ksq
-    h1 = hash(h1) & 0xFFFF
-    h2 = h1^h2
-    sign = h1 & (1<<14) 
-    h = (((h1 & 0x3FFF) << 16) | h2 )^ wc_bc_ep_kp
+    h = crc32(bytes(board))
+    sign = h & (1<<31) 
+    h = (h ^ wc_bc_ep_kp) & 0x3FFFFFFF
     return -h if sign else h
 
 
@@ -424,7 +428,7 @@ def g_sc(h, dr, od):
     # by checking if the move starts with a white piece
     # and does not end with a white piece
 
-    if (board[mv >> 8] > 5) or (board[mv & 63] < 6):
+    if (board[mv >> 8] > 5) or (board[mv & 63] < 6) or (board[mv>>8]==_P and mv>>8<mv&63):
         return 0, _MT_UP, 0, False, 0
     # We need to be sure, that the stored search for the score was over the same
     # nodes as the current search, so the evaluation depth has to be the same 

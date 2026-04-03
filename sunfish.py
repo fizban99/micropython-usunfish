@@ -1,6 +1,12 @@
 from time import time as monotonic
 import usunfish_engine as u
 import gc
+try:
+    import micropython
+except ImportError:
+    def const(x):
+        return x
+    
 gc.collect()
 _A1 = const(56)
 # level from 0 to 7 
@@ -114,7 +120,7 @@ def main():
         u.rotate(); print_pos(); u.rotate()
         is_end = is_end_game()
         print(MESSAGES[is_end])
-        if is_end:
+        if is_end > _CHECK:
             break
 
         lvl = LEVEL-1
