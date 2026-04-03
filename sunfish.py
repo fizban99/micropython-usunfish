@@ -112,10 +112,12 @@ def main():
         while mv not in gm:
             s = input("Your move: ")
             if len(s)==4 and "a"<=s[0]<="h" and "1"<=s[1]<="8" and "a"<=s[2]<="h" and "1"<=s[3]<="8":
-                mv = parse(s[:2]) << 8 | parse(s[2:4])
+                mv = parse(s[:2]) << 8 | parse(s[2:4]) 
             else:
                 print("Please enter a move like g8f6")
-
+                
+        if mv&63<8 and u.position[0][mv>>8]==_P:
+            mv = mv | 0xC0  # assume queen promotion
         u.mk_mv(mv)
         u.rotate(); print_pos(); u.rotate()
         is_end = is_end_game()
@@ -189,8 +191,10 @@ def game(iboard=None):
             if move:
                 amove = yield  # A None reponse prompts user to try again     
             if len(amove)==4 and "a"<=amove[0]<="h" and "1"<=amove[1]<="8" and "a"<=amove[2]<="h" and "1"<=amove[3]<="8":
-                move = parse(amove[:2]) << 8 | parse(amove[2:4])
-
+                move = parse(amove[:2]) << 8 | parse(amove[2:4]) 
+        
+        if move&63<8 and u.position[0][move>>8]==_P:
+            move = move | 0xC0  # assume queen promotion
         u.mk_mv(move)
         # After our move we rotate the board and print it again.
         # This allows us to see the effect of our move.
@@ -204,7 +208,7 @@ def game(iboard=None):
 
         lvl = LEVEL-1
         bmv = 0
-        u.max_nodes = 125 << lvl
+        u.max_nodes = 125 if lvl<0 else 125*(1<<lvl)
         gmvs = u.g_mv()
         gm = [x & 16383 for x in gmvs]
 
@@ -239,3 +243,4 @@ def make_board(b):
 
 if __name__ == "__main__":
     main()
+
