@@ -3,6 +3,11 @@ from random import randint, seed
 try:
     import micropython
 except ImportError:
+    class _MicroPythonFallback:
+        @staticmethod
+        def native(func):
+            return func
+    micropython = _MicroPythonFallback()
     def const(x):
         return x
 from binascii import crc32

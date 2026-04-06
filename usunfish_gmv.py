@@ -3,13 +3,12 @@ from usunfish_data import *
 from random import randint
 try:
     import micropython
-    native = micropython.native
-except (ImportError, AttributeError):
-    def native(func):
-        return func
-try:
-    import micropython
 except ImportError:
+    class _MicroPythonFallback:
+        @staticmethod
+        def native(func):
+            return func
+    micropython = _MicroPythonFallback()
     def const(x):
         return x
 
@@ -94,7 +93,7 @@ def parse_sibl(c_ind, d, op):
 ###############################################################################
 # Chess logic
 ###############################################################################
-@native
+@micropython.native
 def makes_check(ksq, bbit, position, eg):
     """
     Return True if the square king_sq is attacked by the side 'by_white'.
@@ -162,7 +161,7 @@ def makes_check(ksq, bbit, position, eg):
     return False
 
 
-@native
+@micropython.native
 def ma(moves, ind, mv, val, lvalue, kll, h_va, max_h_mv, h_mv, p, q, prom, lmr, empt):
     """ Move sorting logic
         A virtual bonus is added to the score for sorting
@@ -216,7 +215,7 @@ def ma(moves, ind, mv, val, lvalue, kll, h_va, max_h_mv, h_mv, p, q, prom, lmr, 
    
     return ind
 
-@native
+@micropython.native
 def value(lpst, i, j, prom, p0, q, xor, eg, kp, ep, p):
     # base PST delta
     score = lpst[p][j ^ xor] - lpst[p][i ^ xor]
