@@ -2,7 +2,12 @@ import os
 import usunfish_engine as u
 from time import time as monotonic
 import sys
-
+try:
+    import micropython
+except ImportError:
+    def const(x):
+        return x
+    
 _A1 = const(56)
 _P = const(0)
 _MAX_HIST = const(10)
@@ -54,8 +59,8 @@ def render_mv(mv, turn=0):
 
 
 mapping = 'PNBRQK. pnbrqk. '    
-version = f"uSunfish 2026.1 level {LEVEL}"
-
+version = f"uSunfish 2026.1"
+own_book = True
 while True:
     line = sys.stdin.readline()
     if not line:
@@ -66,7 +71,9 @@ while True:
     args = line.split()
     if args[0] == "uci":
         print("id name", version)
-        print("option name Skill_Level type spin default 7 min 0 max 7")
+        print("id author", "fizban99")
+        print(f"option name Skill_Level type spin default {LEVEL} min 0 max 7")
+        print("option name OwnBook type check default true")
         print("uciok")
 
     elif args[0] == "isready":
@@ -75,11 +82,18 @@ while True:
     elif args[0] == "quit":
         break
 
-    elif args[0].strip().lower()[:32] == "setoption name skill_level value":
-        LEVEL = args[0].strip.lower()[-1]
+    elif args[0:4] == ["setoption", "name", "Skill_Level", "value"]:
+        LEVEL = args[4].strip().lower()
+
+    elif args[0:4] == ["setoption", "name", "OwnBook", "value"]:
+        own_book = True if args[4] == "true" else False
+
 
     elif args[:2] == ["position", "startpos"]:
-        u.op_mode = 1
+        if own_book:
+            u.op_mode = 1
+        else:
+            u.op_mode = 0
         u.eg = 0
         u.last_mv = -1
         u.ply = 0

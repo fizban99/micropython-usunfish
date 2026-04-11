@@ -39,6 +39,8 @@ The file may be installed on target hardware with `mpremote`:
 $ mpremote mip install github:fizban99/micropython-usunfish
 ```
 
+It is also compatible with cpython, although it is actually optimized for micropython.
+
 # Gameplay
 
 Running `import sunfish` and then `sunfish.main()` starts a terminal-based textual chess game. The human player is White,
@@ -208,4 +210,6 @@ The format of the `bytes` object is described above in "inverted play".
 
 # The UCI interface
 
-The file uci.py implements a simple UCI interface that can be used with any UCI-compatible user interface. It currently only supports the `skill_level` option and does not include any time management, always playing at the specified skill level.
+The file uci.py implements a simple UCI interface that can be used with any UCI-compatible user interface. It currently only supports the `Skill_Level` option and `OwnBook` and does not include any time management, always playing at the specified skill level. 
+The Windows executable is just the micropython runtime with the micropython code frozen and autolaunching. It is compatible with [cutechess](https://cutechess.com/), [arena](http://www.playwitharena.de/) and [lucaschess](https://lucaschess.pythonanywhere.com/).
+You can also play on lichess at [level 0](https://lichess.org/@/uSunfish-l0), [level 1](https://lichess.org/@/uSunfish-l1) or [level 7](https://lichess.org/@/uSunfish-l7).

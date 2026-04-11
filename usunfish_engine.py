@@ -19,6 +19,8 @@ from usunfish_data import *
 from usunfish_gmv import parse_sibl, makes_check, gen_moves, value
 import usunfish_gmv as ugmv
 gc.collect()
+
+HASH_XOR = randint(0,0x0F) # randomize the last four bits across games
 # initial bytes of the opening tables
 _OP_IND2 = const(0)
 _OP_IND = const(1)
@@ -142,7 +144,7 @@ def ghash():
     16 bits for bytes, we use crc32 instead
     """
     board, ksq, wc_bc_ep_kp, pscore, _  = position
-    h = crc32(bytes(board))
+    h = crc32(bytes(board)) ^ HASH_XOR 
     sign = h & (1<<31) 
     h = (h ^ wc_bc_ep_kp) & 0x3FFFFFFF
     return -h if sign else h

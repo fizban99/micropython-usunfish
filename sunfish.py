@@ -1,9 +1,8 @@
 from time import time as monotonic
 import usunfish_engine as u
 import gc
-try:
-    import micropython
-except ImportError:
+import sys
+if sys.implementation.name != "micropython" or sys.platform == "win32":
     def const(x):
         return x
     
