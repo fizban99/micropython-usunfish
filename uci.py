@@ -22,6 +22,16 @@ for arg in sys.argv[1:]:
 
 startpos = u.position[:]
 startpos[0] = u.position[0][:]
+
+
+def send(*parts):
+    sys.stdout.write(" ".join(str(part) for part in parts))
+    sys.stdout.write("\n")
+    try:
+        sys.stdout.flush()
+    except:
+        pass
+
 def get_turn():
     return u.position[2] >> 20
 
@@ -70,14 +80,15 @@ while True:
         continue
     args = line.split()
     if args[0] == "uci":
-        print("id name", version)
-        print("id author", "fizban99")
-        print(f"option name Skill_Level type spin default {LEVEL} min 0 max 7")
-        print("option name OwnBook type check default true")
-        print("uciok")
+        send("id name",version )
+        send("id author", "fizban99")
+        send(f"option name Skill_Level type spin default {LEVEL} min 0 max 7")
+        send("option name OwnBook type check default true")
+        send("uciok")
+
 
     elif args[0] == "isready":
-        print("readyok")
+        send("readyok")
 
     elif args[0] == "quit":
         break
@@ -100,9 +111,9 @@ while True:
         u.op_ind = _OP_IND
         u.max_qs = _MAX_QS
         hist = [startpos]
+        u.position[:] = hist[-1][:]
+        u.position[0] = hist[-1][0][:]        
         for mv in args[3:]:
-            u.position[:] = hist[-1][:]
-            u.position[0] = hist[-1][0][:]
             move_code = parse_move(mv, 1-(u.position[2]>>20))
             
             u.mk_mv(move_code)
@@ -129,7 +140,7 @@ while True:
         if len(gmv)==1:
             best_move_code = gmv[0]&0x3FFF
             best_move = render_mv(best_move_code, wc_bc_ep_kp>>20 )
-            print("bestmove", best_move)
+            send("bestmove", best_move)
             continue
 
         for depth, gamma, score, mv in u.search(gmv):
@@ -137,7 +148,7 @@ while True:
             if score >= gamma and mv:
                 best_move = render_mv(mv, wc_bc_ep_kp>>20 )
                 best_move_code = mv
-                print("info depth", depth, "score cp", score, "nodes", u.nodes, "pv", best_move)
+                send("info depth", depth, "score cp", score, "nodes", u.nodes, "pv", best_move)
 
             if  (lvl == -1 and (best_move_code or u.nodes > 125)) or (lvl > -1 and u.nodes > 125*(1<<lvl)) or (score== _MT_LW and depth>=3):
                 break
@@ -148,4 +159,4 @@ while True:
                 best_move_code = gm[-1]
 
         best_move = render_mv(best_move_code, wc_bc_ep_kp>>20 )
-        print("bestmove", best_move if best_move_code&0x3F3F!=0 else "(none)")
+        send("bestmove", best_move if best_move_code&0x3F3F!=0 else "(none)")
