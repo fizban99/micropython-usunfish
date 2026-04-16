@@ -1,5 +1,6 @@
 import os
 import usunfish_engine as u
+from usunfish_engine import render_mv, parse_move
 from time import time as monotonic
 import sys
 try:
@@ -7,7 +8,9 @@ try:
 except ImportError:
     def const(x):
         return x
-    
+
+version = "uSunfish 2026.2" 
+
 _A1 = const(56)
 _P = const(0)
 _MAX_HIST = const(10)
@@ -19,9 +22,50 @@ LEVEL = 7
 for arg in sys.argv[1:]:
     if arg.startswith("--level="):
         LEVEL = int(arg.split("=", 1)[1])
+        limit_strength = True
+    else:
+        limit_strength = False
 
 startpos = u.position[:]
 startpos[0] = u.position[0][:]
+
+
+def parse_go(args):
+    """
+    Parse a UCI 'go' command after line.split().
+
+    Example input:
+        ["go", "wtime", "8715", "btime", "62973", "binc", "940"]
+
+    Returns a dict with normalized values.
+    """
+    result = {
+        "wtime": None,
+        "btime": None,
+        "winc": 0,
+        "binc": 0,
+        "movestogo": None,
+        "depth": None,
+        "nodes": None,
+        "mate": None,
+        "movetime": None,
+        "infinite": False,
+    }
+
+    i = 1
+    n = len(args)
+
+    while i < n:
+        token = args[i]
+        if token == "infinite":
+            result["infinite"] = True
+            i += 1
+        elif token in result.keys():
+            result[token] = int(args[i + 1])
+            i += 2
+        else:
+            i += 1
+    return result
 
 
 def send(*parts):
@@ -35,41 +79,6 @@ def send(*parts):
 def get_turn():
     return u.position[2] >> 20
 
-
-def render(i):
-    rank, fil = divmod(i - _A1, 8)
-    return chr(fil + ord('a')) + str(-rank + 1)
-
-
-def parse(c):
-    fil, rank = ord(c[0]) - ord('a'), int(c[1]) - 1
-    return _A1 + fil - 8*rank
-
-
-def parse_move(move_str, white_pov):
-    mapping = "NBRQ"
-    i, j, prom = parse(move_str[:2]), parse(
-        move_str[2:4]), move_str[4:].upper()
-    if not white_pov:
-        i, j = 63 - i, 63 - j
-    mv = i << 8 | j | mapping.index(prom) << 6
-    return mv
-
-
-def render_mv(mv, turn=0):
-    if mv == 0:
-        return ""
-    i, j = mv >> 8, mv & 0x3F
-    prom = ""
-    if j < 8 and u.position[0][i] | 8 == _P+8:
-        prom = mapping[((mv >> 6) & 3)+1].lower()
-    if turn == 1:
-        i, j = 63 - i, 63 - j
-    return render(i) + render(j) + prom
-
-
-mapping = 'PNBRQK. pnbrqk. '    
-version = f"uSunfish 2026.1"
 own_book = True
 while True:
     line = sys.stdin.readline()
@@ -82,8 +91,9 @@ while True:
     if args[0] == "uci":
         send("id name",version )
         send("id author", "fizban99")
-        send(f"option name Skill_Level type spin default {LEVEL} min 0 max 7")
+        send(f"option name Skill Level type spin default {LEVEL} min 0 max 7")
         send("option name OwnBook type check default true")
+        send(f"option name UCI_LimitStrength type check default {limit_strength}")
         send("uciok")
 
 
@@ -93,11 +103,14 @@ while True:
     elif args[0] == "quit":
         break
 
-    elif args[0:4] == ["setoption", "name", "Skill_Level", "value"]:
-        LEVEL = args[4].strip().lower()
+    elif args[0:5] == ["setoption", "name", "Skill", "Level", "value"]:
+        LEVEL = args[5].strip().lower()
 
     elif args[0:4] == ["setoption", "name", "OwnBook", "value"]:
         own_book = True if args[4] == "true" else False
+
+    elif args[0:4] == ["setoption", "name", "UCI_LimitStrength", "value"]:
+        limit_strength = True if args[4] == "true" else False
 
 
     elif args[:2] == ["position", "startpos"]:
@@ -122,17 +135,17 @@ while True:
             hist.append((u.position[0][:], u.position[1], u.position[2], u.position[3], u.position[4]))
 
     elif args[0] == "go":
-
+        state = parse_go(args)
         start = monotonic()
         move_str = None
         best_move = 0
         best_move_code = 0
-        u.eg = 0
         board, pscore, wc_bc_ep_kp, ksq, mob = hist[-1]
+        turn = "b" if wc_bc_ep_kp>>20 else "w"
         board = board[:]
         gmv = u.g_mv()
         gm = [m&0x3FFF for m in gmv]
-        lvl = LEVEL
+        lvl = LEVEL if limit_strength else 100
         lvl = int(lvl)-1
         best = 0
         u.position[:] = hist[-1][:]
@@ -142,6 +155,21 @@ while True:
             best_move = render_mv(best_move_code, wc_bc_ep_kp>>20 )
             send("bestmove", best_move)
             continue
+
+        time_left = state[f"{turn}time"]
+        if time_left is None or state["infinite"]:
+            u.max_time = None
+        else:
+            mtg = state["movestogo"]
+            if not mtg:
+                if time_left < 10000:
+                    mtg = 10
+                elif  u.eg:
+                    mtg = 20
+                else:
+                    mtg = 40
+            u.max_time =  int(monotonic()*1000) + min(time_left // mtg + state[f"{turn}inc"] * 8 // 10, time_left // 4)
+        
 
         for depth, gamma, score, mv in u.search(gmv):
 

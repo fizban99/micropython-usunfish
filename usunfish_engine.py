@@ -62,12 +62,12 @@ _NCANCEL = const(0)
 _QS = const(16)
 _QS_A = const(37)
 _EVAL_ROUGHNESS = const(4)
-_MAX_DEPTH = const(9)
+_MAX_DEPTH = const(10)
 # limit depth for quiescence search 
 _MAX_QS = const(8)
 max_qs = _MAX_QS
 max_nodes = 8000
-idepth = 1
+max_time = None
 # killer heuristic table
 t_kll = [0]*(_MAX_DEPTH)
 
@@ -136,7 +136,7 @@ def restore(mv, dif):
     if board[(mv >> 8) & 0xFF] == _K:
         pos[1] = (ksq & 0xFF00) | (mv >> 8)
 
-
+# @micropython.native
 def ghash():
     """Generate a hash from the board
     and store it as a smallint of 31 bits (30 bit + sign bit)
@@ -250,7 +250,7 @@ def s_sc(tscd, tsch, i, mv, dr, best, h, fh, od):
                                             16) | ((od+16) << 20) | (iter << 25)
     tsch[i] = h
 
-
+# @micropython.native
 def s_hmv(h_mv, h_va, mv, max_h_mv, w):
     # search for existing mv in current range
     # of history heuristics list
@@ -287,7 +287,7 @@ def s_entry(tp, mv, d):
     if mv != mv1 and mv != mv2:
         tp[d] = (mv1 << 16) | mv
 
-
+# @micropython.native
 def s_tp(h, mv, best, dr, val, od, fh, mob, incheck):
     """Store a chunk of data in a hash table
     The hash table has an index list with the 30-bit hashes (smallints),
@@ -458,7 +458,7 @@ def reset_pos(omv, sc, lwc_bc_ep_kp, dif, omb):
     pos[4] = omb
     restore(omv, dif)
 
-
+# @micropython.native
 def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr):
     """ Receives a position, the gamma,depth,can_null, qs and returns the best score for the position
         Let s* be the "true" score of the sub-tree we are searching.
@@ -510,7 +510,7 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr):
         
         nodes += 1
         # kill switch if we are 50% more than the allowed nodes
-        if 10*nodes > 15*max_nodes:
+        if 10*nodes > 15*max_nodes or (max_time and int(monotonic()*1000) > max_time):
             ret, best = 1, _CANCEL
             break
 
@@ -594,10 +594,10 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr):
             # But still.... We just have to move stand-pat to be before null-move.
             # if depth > 2 and can_null and any(c in pos.board for c in "RBNQ"):
             # if depth > 2 and can_null and any(c in pos.board for c in "RBNQ") and abs(pos.score) < 500:
-            if not lmr and not incheck and d > 2 and cn  and abs(sc) < 125:
+            if not incheck&2 and d > 2 and cn  and abs(sc) < 125:
                 lwc = wc_bc_ep_kp
                 rotate(True)
-                res = bound(pos, 1-g, d-3, False, 0, mb,
+                res = bound(pos, 1-g, d-3 , False, 0, mb,
                             gm, ind, gmv, incheck, 0)
                 res = -((res & 0xFFFF)-16384)
                 rotate()
@@ -621,7 +621,7 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr):
             # try to find one with a more shallow search.
             # This is known as Internal Iterative Deepening (IID).
             if not hmove and d > 2:
-                hmove = bound(pos, g,  d-2, False, 0, 0,
+                hmove = bound(pos, g, d - 2, False, 0, 0,
                                gm, ind, gmv, incheck, 0)
                 hmove = hmove >> 16
 
@@ -672,7 +672,7 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr):
             # Reverse / Forward futility pruning (non-qsearch)
             # Only when not in check and not in qsearch
             # If static score is already far above gamma and ply is above 2, accept it
-            # If static score is already far below gamma and ply is above 2, accept it            
+            # If static score is already far below gamma and ply is above 2, accept it 
             val = ((gm[ind+l-1] & 0x00FFFFFF) >> 14) - 512 
             if (not incheck and (q==14 or q==6) and d > 0 and pdpth > 2 and 
                    ((sc + mb + val + _QS*d*5) < g or (sc + mb + val - _QS*d*5) >= g)):
@@ -709,7 +709,7 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr):
                         break  # inner while
                 else:
                     # Simple Late Move Reductions (LMR)
-                    if ret-l > 3 and pdpth > 2:
+                    if (ret-l > 3 and pdpth > 2):
                         lmr = 1
                     res = bound(pos, 1-g, od-1, True, best_mv,
                                 val + mb, gm, ind+l, None, incheck, lmr)
@@ -822,7 +822,7 @@ def g_next_move(op):
 def search(gmv):
     """Iterative deepening MTD-bi search"""
     global nodes, req_d, tp_scored, tp_scoreh,  max_d_sc, t_szs, op_ind, iter
-    global eg, max_qs, req_d
+    global eg, max_qs, req_d, start_time
 
     _, _, _, pscore, _ = position
 
@@ -881,7 +881,6 @@ def g_mv():
     global max_qs, eg, pst
     global t_szs, max_d_sc, _QS
     global max_h_mv
-    global idepth
 
     pos = position
     lbrd, _, wc_bc_ep_kp, pscore, _ = pos
@@ -928,7 +927,6 @@ def g_mv():
         pos[3] = pscore
 
 
-    idepth = 1
     ts = [0,0,0,0]
     d = 0
 
@@ -961,10 +959,9 @@ def g_mv():
                 mv = h_mv[turn][j]
                 if mv in gmm:
                     v = h_va[turn][j] >> 2
-                    if v > 0:
-                        h_mv[turn][i] = mv
-                        h_va[turn][i] = v
-                        i += 1
+                    h_mv[turn][i] = mv
+                    h_va[turn][i] = v
+                    i += 1
             max_h_mv[turn] = i
         pos[2] = lwc_bc_ep_kp
         # put the previous PV at the beginning
@@ -978,7 +975,6 @@ def g_mv():
 
 
 def recalc_tp(d, ts):
-    global idepth
     # move the PV
     # to the beginning
     _, _, wc_bc_ep_kp, pscore, mob = position
@@ -994,8 +990,6 @@ def recalc_tp(d, ts):
     e = tscd[(i << 1)+1]
     mv = (tscd[i << 1] & 0x03FFF)    
     sod = ((e >> 20) & 0x1F)-16
-    if d==0 and sod > 1:
-        idepth = sod
     
     # best = (e & 0x7FFF) - 16384
     if mv: # store it at the beginning 
