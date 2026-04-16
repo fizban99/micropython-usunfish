@@ -19,12 +19,12 @@ _OP_IND = const(1)
 _MAX_QS = const(8)
 
 LEVEL = 7
+limit_strength = False
 for arg in sys.argv[1:]:
     if arg.startswith("--level="):
         LEVEL = int(arg.split("=", 1)[1])
         limit_strength = True
-    else:
-        limit_strength = False
+
 
 startpos = u.position[:]
 startpos[0] = u.position[0][:]
