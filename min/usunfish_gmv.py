@@ -7,6 +7,7 @@ except ImportError:
 		def native(func):return func
 	micropython=_MicroPythonFallback()
 	def const(x):return x
+b_overflow=0
 vector_list=[]
 _BSHP_MG=const(20)
 _BSHP_EG=const(38)
@@ -121,6 +122,7 @@ def makes_check(ksq,bbit,position,eg):
 	return False
 @micropython.native
 def ma(moves,ind,mv,val,lvalue,kll,h_va,max_h_mv,h_mv,p,q,prom,lmr,empt):
+	global b_overflow
 	if val<lvalue or lvalue>=_QS and prom<3:return ind
 	if p==_P and prom<3:order=0
 	elif q!=empt or prom==3:
@@ -135,7 +137,7 @@ def ma(moves,ind,mv,val,lvalue,kll,h_va,max_h_mv,h_mv,p,q,prom,lmr,empt):
 	else:order=0
 	if not(lmr and order==0):
 		if ind<len(moves):moves[ind]=mv|val+512<<14|order<<24;ind+=1
-		else:0
+		else:b_overflow+=1
 	return ind
 @micropython.native
 def value(lpst,i,j,prom,p0,q,xor,eg,kp,ep,p):
@@ -162,7 +164,7 @@ def king_ring(k,buff):
 def rq_mobility(r_file,q_file,enemy_pawns,own_pawns,pf2,sop_r,sop_q,op_r,op_q):pf1=enemy_pawns&(255^own_pawns);s_op=r_file&pf1;op=r_file&pf2;m=sum(s_op>>k&1 for k in range(8))*sop_r;m+=sum(op>>k&1 for k in range(8))*op_r;s_op=q_file&pf1;op=q_file&pf2;m+=sum(s_op>>k&1 for k in range(8))*sop_q;m+=sum(op>>k&1 for k in range(8))*op_q;return m
 @micropython.native
 def gen_moves(gm,ind,pos,lvalue,kll,lmr,hva,mhva,hmv,eg,op_mode):
-	b,ksq,wcek,_,_=pos;lpst=pst;l=ind;lbuff=[0]*9;ep=wcek>>8&255;kp=wcek&255;cwq=wcek>>18&2;cke=wcek>>18&1;bk=ksq>>8;wk=ksq&255;xor=wcek>>20;empt=6|xor<<3;xor=xor*7;bkr,bkf,wkr,wkf=bk>>3,bk&7,wk>>3,wk&7;bk_ring=king_ring(bk,lbuff);wk_ring=king_ring(wk,lbuff);bpi=0;wp_files=[0]*8;bp_files=[0]*8;i=-1;bshp=[0,0];mob=[0,0];attc=[0,0]
+	b,ksq,wcek,_,_,_=pos;lpst=pst;l=ind;lbuff=[0]*9;ep=wcek>>8&255;kp=wcek&255;cwq=wcek>>18&2;cke=wcek>>18&1;bk=ksq>>8;wk=ksq&255;xor=wcek>>20;empt=6|xor<<3;xor=xor*7;bkr,bkf,wkr,wkf=bk>>3,bk&7,wk>>3,wk&7;bk_ring=king_ring(bk,lbuff);wk_ring=king_ring(wk,lbuff);bpi=0;wp_files=[0]*8;bp_files=[0]*8;i=-1;bshp=[0,0];mob=[0,0];attc=[0,0]
 	if eg:att=_KRN_EG,_KRB_EG,_KRR_EG,_KRQ_EG;krc=_KR1_EG,_KR2_EG,_KR3_EG,_KR4_EG;mbt=mbt_eg;sopn=_SOPN2R_EG,_SOPN2Q_EG;opn=_OPN2R_EG,_OPN2Q_EG
 	else:att=_KRN_MG,_KRB_MG,_KRR_MG,_KRQ_MG;krc=_KR1_MG,_KR2_MG,_KR3_MG,_KR4_MG;mbt=mbt_mg;sopn=_SOPN2R_MG,_SOPN2Q_MG;opn=_OPN2R_MG,_OPN2Q_MG
 	RQ_files=[0,0,0,0];P_files=[0,0]
@@ -269,4 +271,4 @@ def gen_moves(gm,ind,pos,lvalue,kll,lmr,hva,mhva,hmv,eg,op_mode):
 				mxe=max(abs(r+1-wkr),abs(f-wkf));mxo=max(abs(r+1-bkr),abs(f-bkf))
 				if eg:mob[1]+=_CTPA_EG+_MXEPA_EG*mxe*(r-2)+_MXOPA_EG*mxo*(r-2)+_RRPA_EG*(r-2)+_PHPA_EG*phlx+_PPPA_EG*ppawn
 				else:mob[1]+=_CTPA_MG+_MXEPA_MG*mxe*(r-2)+_MXOPA_MG*mxo*(r-2)+_RRPA_MG*(r-2)+_PHPA_MG*phlx+_PPPA_MG*ppawn
-	pos[4]=(mob[0]-mob[1]+2)//4;return l
+	pos[4]=mob[0]-mob[1];return l
