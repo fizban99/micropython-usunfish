@@ -45,3 +45,21 @@ op2 = b'\xee\xbe;\xfa\xf6\xfeO\xdfn;\xfa\xf6\xfeO\xdf\xce;\xfa\xf6\xfeO\xdf\xde;
 mbt_mg =  b'ohf`aYccc\x85\x91{\x7f}cceecedgfc]c\x80\x86{\x94fc_eccccec`ocx\x85\x94ecdihehcfcbjqc\x7f\x8ffcbeica\\ecc_gbc\xacecehehkcecel[[>cecV[^^aXccc\\^ifZcc'
 mbt_eg =  b'ikffgccccpw`b\x84cclnmhgcdcnc|zg\x80dc`mcibadcopckc\x88dchmillcfcrlrcf\x8efc`ioh\\]ecf^gec\xaeecbjhcgcacoiinPcacMff__bcccQKa]]cc'
 
+# helpers
+def get_index(value, table, start, end):
+    try:
+        i = table.index(value, start, end)
+        return i
+    except ValueError:
+        return -1
+
+# helpers for cpython    
+from time import time
+def monotonic():    
+    return (int(time()*1000))
+
+def ticks_diff(a, b):
+    return a-b
+
+def ticks_add(a, inc):
+    return a + inc

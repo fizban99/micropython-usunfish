@@ -1,5 +1,6 @@
-from time import time as monotonic
 from random import randint, seed
+from binascii import crc32
+from usunfish_common import monotonic
 try:
     import micropython
 except ImportError:
@@ -10,24 +11,26 @@ except ImportError:
     micropython = _MicroPythonFallback()
     def const(x):
         return x
-from binascii import crc32
 
-seed(int(monotonic()))
+
+seed(monotonic())
 
 import gc
-from usunfish_data import *
+from usunfish_common import *
+import usunfish_gmv
 from usunfish_gmv import parse_sibl, makes_check, gen_moves, value
 import usunfish_gmv as ugmv
 gc.collect()
 
-HASH_XOR = randint(0,0x0F) # randomize the last four bits across games
+BASE_SEED = randint(0,0x3FFFFFFF)
 # initial bytes of the opening tables
 _OP_IND2 = const(0)
 _OP_IND = const(1)
 # Maximum number of moves to keep in the history
 _MAX_HIST = const(10)
 # Memory allocation for the move buffer
-gm_buf = [0]*600
+gm_buf = [0]*800
+history = list()
 ###############################################################################
 # Global constants
 ###############################################################################
@@ -62,7 +65,7 @@ _NCANCEL = const(0)
 _QS = const(16)
 _QS_A = const(37)
 _EVAL_ROUGHNESS = const(4)
-_MAX_DEPTH = const(10)
+_MAX_DEPTH = const(15)
 # limit depth for quiescence search 
 _MAX_QS = const(8)
 max_qs = _MAX_QS
@@ -74,25 +77,26 @@ t_kll = [0]*(_MAX_DEPTH)
 # Transposition tables
 # with a replacement strategy based on age
 # useful for the hash move
-_T_SZS = const(300)
-t_szs = [0, 0, 0, 0]
-tp_scoreh = [[0]*_T_SZS, [0]*_T_SZS, [0]*_T_SZS, [0]*_T_SZS]
+_T_SZS = const(128)
+T_SLOTS = 16
+t_szs = [0] * T_SLOTS
+tp_scoreh = [[0] * _T_SZS for _ in range(T_SLOTS)]
 # preallocate the score table
-tp_scored = [[0]*_T_SZS*2, [0]*_T_SZS*2, [0]*_T_SZS*2, [0]*_T_SZS*2]
-max_d_sc = [0, 0, 0, 0]
+tp_scored = [[0] * (_T_SZS * 2) for _ in range(T_SLOTS)]
+max_d_sc = [0] * T_SLOTS
 nodes = 0
 op_mode = 1 # indicates whether in opening mode or not
-
 op_ind = _OP_IND  # initial byte of the opening table
 
 last_mv = -1
 ply = 0 # which ply move we are in
 req_d = 0 # what is the requested depth of the current iteration
 iter = 0 # iteration counter for the transposition table age tracking
-h_mv = [[0]*64, [0]*64]  # move history heuristic table for moves white and black
-h_va = [[0]*64, [0]*64]  # move history heuristic table for values white and black
+h_mv = ([0]*64, [0]*64)  # move history heuristic table for moves white and black
+h_va = ([0]*64, [0]*64)  # move history heuristic table for values white and black
 max_h_mv = [0,0]  # upper index of the history heuristic
-eg = 0  # whether we are in end game mode or not (king and pawn switch pst in end game)
+eg = 0  # whether we are in end game mode or not (switch psts in end game)
+
 # Our board is represented as a list of 64 integers. Each element represents a square.
 # There is no padding, so this diverges from the original sunfish implementation
 # each integer is a piece, even numbers for white pieces, odd numbers for black pieces
@@ -111,16 +115,76 @@ position = [
     1015936,  # wc_bc_ep_kp
     0,  # pscore
     0,  # mobility
+    0,  # hash
 ]
+
+
+# https://github.com/skeeto/hash-prospector
+@micropython.native
+def hash_piece(pc, i, base_seed=BASE_SEED): 
+    index = pc << 6 | i
+    x = (base_seed ^ index) 
+    x ^= (x >> 16) 
+    x = (x * 0x7feb352d) 
+    x ^= (x >> 15) 
+    x = (x * 0x846ca68b) 
+    x ^= (x >> 16) 
+    return (x & 0x3FFFFFFF)
+
+@micropython.native
+def norm_wb_ek(wb_ek, turn):
+    if turn:
+        ep = (wb_ek>>8) & 0xFF
+        kp = wb_ek & 0xFF
+        wb_ek = ((wb_ek&0x30000) << 2) | ((wb_ek &0xC0000) >> 2) | (ep^63 if ep != 128 else 128) << 8 | (kp^63 if kp != 128 else 128)
+    return wb_ek &0xFFFFF
+
+@micropython.native
+def hash_state(wb_ek, turn):
+    return hash_piece(0, norm_wb_ek(wb_ek, turn))
+
+@micropython.native
+def hash_state_swap(wb_ek, wb_ek2, turn):
+    wb_ek = norm_wb_ek(wb_ek, turn^1)
+    wb_ek2 = norm_wb_ek(wb_ek2, turn)
+    if wb_ek != wb_ek2:
+        return hash_piece(0, wb_ek) ^ hash_piece(0, wb_ek2)
+    else:
+        return 0
+
+def hash_board():
+    pos = position
+    board, _, wc_bc_ep_kp, _, _ , _ = pos
+    turn = wc_bc_ep_kp >> 20
+    h = hash_state(pos[2], turn)   
+
+    if turn:
+        
+        for i, p in enumerate(board):
+            if p & 7 < 6:
+                # piece colors are inverted
+                p ^= 8
+                # board is inverted for black to move
+                h ^= hash_piece(p, 63^i)
+        h= -h
+    else:
+        for i, p in enumerate(board):
+            if p & 7 < 6:
+                h ^= hash_piece(p, i)
+                 
+    pos[5] = h
+    return h
+
+hash_board()
 
 ###############################################################################
 # Board functions
 ###############################################################################
-
+@micropython.native
 def restore(mv, dif):
     """Restore a board from a difference"""
     pos = position
-    board, ksq, _, _, _ = pos
+    board, ksq, _, _, _, _ = pos
 
     board[(mv >> 8) & 0xFF] = (dif >> 4) & 0x0F
     board[mv & 0x3F] = dif & 0x0F
@@ -136,45 +200,36 @@ def restore(mv, dif):
     if board[(mv >> 8) & 0xFF] == _K:
         pos[1] = (ksq & 0xFF00) | (mv >> 8)
 
-# @micropython.native
-def ghash():
-    """Generate a hash from the board
-    and store it as a smallint of 31 bits (30 bit + sign bit)
-    Since the micropython hash is quite simple and it is
-    16 bits for bytes, we use crc32 instead
-    """
-    board, ksq, wc_bc_ep_kp, pscore, _  = position
-    h = crc32(bytes(board)) ^ HASH_XOR 
-    sign = h & (1<<31) 
-    h = (h ^ wc_bc_ep_kp) & 0x3FFFFFFF
-    return -h if sign else h
-
-
+@micropython.native
 def reverse():
     """Swap white and black pieces just by flipping
     the highest bit of each nibble and reverse the board"""
     pos = position
-    board, ksq, wc_bc_ep_kp, pscore, mob = pos
+    board, ksq, wc_bc_ep_kp, pscore, mob, _ = pos
 
     for i in range(32):
-        board[i], board[63-i] = board[63-i] ^ 8, board[i] ^ 8
+        board[i], board[63^i] = board[63^i] ^ 8, board[i] ^ 8
     pos[1] = ((ksq >> 8)^63) | (((ksq & 0xFF)^63) << 8)
 
-
+@micropython.native
 def rotate_and_set(score, wc, bc, ep, kp, turn, nullmove, mob):
     """Rotates the board and sets new values"""
     # board, ksq, wc_bc_ep_kp, pscore = position
     pos = position
     reverse()
+    # h = abs(pos[5])^pos[2]
     turn = turn ^ 1
     pos[3] = -score
     pos[2] = (turn << 20) | (bc << 18) | (wc << 16) | (ep^63 if ep !=
                                                        128 and not nullmove else 128) << 8 | (kp^63 if kp != 128 and not nullmove else 128)
     pos[4] = -mob
+    # h = h^pos[2]
+    pos[5] = -pos[5]
 
+@micropython.native
 def rotate(nullmove=False):
     """Rotates the board, preserving enpassant, unless nullmove"""
-    board, ksq, wc_bc_ep_kp, pscore, mob = position
+    board, ksq, wc_bc_ep_kp, pscore, mob, _ = position
 
     turn = (wc_bc_ep_kp >> 20)
     wc = (wc_bc_ep_kp >> 18) & 3
@@ -183,19 +238,27 @@ def rotate(nullmove=False):
     kp = wc_bc_ep_kp & 0xFF
     rotate_and_set(pscore, wc, bc, ep, kp, turn, nullmove, mob)
 
+@micropython.native
+def move(mv, val, pos):
+    board, ksq, wc_bc_ep_kp, pscore, mob, h = pos
 
-def move(mv, val=None):
-    pos = position
-    board, ksq, wc_bc_ep_kp, pscore, mob = pos
-
-    xor = (wc_bc_ep_kp >> 20) * 7
+    
     i, j, prom, turn = mv >> 8, mv & 63, ((
         mv & 0xFF) >> 6)+1, wc_bc_ep_kp >> 20
     xor = turn * 7
+    pxor = turn << 3
     p = board[i]
+    h = abs(h)
+    if turn:
+        ii, jj, pc  = 63^i, 63^j,  p ^ 8    
+    else:
+        ii, jj, pc  = i, j,  p     
+
     # Copy variables 
     wc, bc, ep, kp = (wc_bc_ep_kp >> 18) & 3, (wc_bc_ep_kp >> 16) & 3,  (wc_bc_ep_kp >> 8) & 0xFF,wc_bc_ep_kp & 0xFF
     q = board[j]
+    if q&7<6:
+        h ^= hash_piece(q^pxor, jj)   
     pp = p & 7
     t = pp if (not eg or op_mode) else PSTMAP[pp] 
     val = value(pst, i, j, prom, p, q, xor, eg, kp, ep, t) if val is None else (val)
@@ -205,7 +268,10 @@ def move(mv, val=None):
     # Actual move
     dif = (board[i] << 4) | board[j]
     board[j] = p
-    board[i] = 6 | (turn << 3) 
+    
+    board[i] = 6 | (turn << 3)
+    # xor out the piece 
+    h ^= hash_piece(pc, ii)   
     # Castling rights, we move the rook or capture the opponent's
     wc = wc & 1 if i == _A1 else wc & 2 if i == _H1 else wc
     # Black castling rights are inverted
@@ -213,26 +279,47 @@ def move(mv, val=None):
     # Castling
     if p == _K:
         wc = 0
+        # xor in the king
+        h ^= hash_piece(pc, jj)  
         if abs(j - i) == 2:
             kp = (i + j) // 2
             k = _A1 if j < i else _H1
             dif = (k << 16) | (kp << 8) | dif
             board[k] = 6 | (turn << 3)
+            # xor out the rook
+            h ^= hash_piece(_R^pxor, 63^k if turn else k )        
             board[kp] = _R
+            h ^= hash_piece(_R^pxor, 63^kp if turn else kp )   
         ksq = (ksq & 0xFF00) | j
     # Pawn promotion, double move and en passant capture
     elif p == _P:
         if _A8 <= j <= _H8:
             board[j] = prom
+            # xor in the queen
+            h ^= hash_piece(prom^pxor, jj)  
+        else:
+            # xor in the pawn
+           h ^= hash_piece(pc, jj)  
         if j - i == 2 * _NO:
             ep = i + _NO
         if j == (wc_bc_ep_kp >> 8) & 0xFF:
             board[j + _S] = 6 | (turn << 3)
+            # xor out the ep pawn
+            h ^= hash_piece(_P^pxor, 63^(j + _S) if turn else  j + _S )   
             dif = ((j + _S) << 8) | dif
-    # We rotate the returned position, so it's ready for the next player
+    else:
+        # xor in the piece if not a king or a pawn
+        h ^= hash_piece(pc, jj) 
 
     pos[1] = ksq
+
+    # We rotate the returned position, so it's ready for the next player
     rotate_and_set(score, wc, bc, ep, kp, turn, False, mob)
+    # xor in the state
+    hash_state_swap(wc_bc_ep_kp, pos[2], turn)
+    turn ^= 1
+    pos[5] = -h if turn else h
+
     return dif
 
 
@@ -242,7 +329,7 @@ def move(mv, val=None):
 # Search logic
 ###############################################################################
 
-
+@micropython.native
 def s_sc(tscd, tsch, i, mv, dr, best, h, fh, od):
     """ Set move score in the hash table"""
     tscd[i << 1] = mv
@@ -250,14 +337,13 @@ def s_sc(tscd, tsch, i, mv, dr, best, h, fh, od):
                                             16) | ((od+16) << 20) | (iter << 25)
     tsch[i] = h
 
-# @micropython.native
+@micropython.native
 def s_hmv(h_mv, h_va, mv, max_h_mv, w):
     # search for existing mv in current range
     # of history heuristics list
     i = 0
-    try:
-        i = h_mv.index(mv, 0, max_h_mv)
-    except ValueError:
+    i = get_index(mv, h_mv, 0, max_h_mv)
+    if i <0:
         if max_h_mv < len(h_va):
             i = max_h_mv
             max_h_mv += 1      # use next free slot
@@ -278,7 +364,7 @@ def s_hmv(h_mv, h_va, mv, max_h_mv, w):
     h_va[i] = 40 if v > 40 else 1 if v < 1 else v
     return max_h_mv
 
-
+@micropython.native
 def s_entry(tp, mv, d):
     """Store a move in the heuristics table"""
     m = tp[d]
@@ -287,7 +373,7 @@ def s_entry(tp, mv, d):
     if mv != mv1 and mv != mv2:
         tp[d] = (mv1 << 16) | mv
 
-# @micropython.native
+@micropython.native
 def s_tp(h, mv, best, dr, val, od, fh, mob, incheck):
     """Store a chunk of data in a hash table
     The hash table has an index list with the 30-bit hashes (smallints),
@@ -315,7 +401,7 @@ def s_tp(h, mv, best, dr, val, od, fh, mob, incheck):
 
     e = fh | (best+16384) | (dr << 16) | ((od+16) << 20) | (iter << 25)
     it = iter
-    mv = mv | ((mob+512)<<14) | ((incheck>>1) << 29)
+    mv = mv | ((mob+512)<<14) | ((incheck>>2) << 29)
     # if dr < _T_SZS2:
     #     h, tp_scoreh2[dr] = tp_scoreh2[dr], h
     #     mv, tp_scored2[dr<<1] = tp_scored2[dr<<1], mv
@@ -323,15 +409,15 @@ def s_tp(h, mv, best, dr, val, od, fh, mob, incheck):
     #     it = e >> 25 # local iter
     #     if h == 0 or h==tp_scoreh2[dr]:
     #         return
-    hind = (h) & 3
+    hind = (h) & (T_SLOTS-1)
     new = False
     tszs, tsch, tscd, md = t_szs[hind], tp_scoreh[hind], tp_scored[hind], max_d_sc[hind]
-    try:
-        i = tsch.index(h, 0, tszs)
+    i = get_index(h, tsch, 0, tszs)
+    if i >= 0:
         e2 = tscd[(i << 1)+1]
         sod = ((e2 >> 20) & 0x1F)-16
         sdr = (e2 >> 16) & 0xF
-    except ValueError:
+    else:
         sod = od
         sdr = dr
         if tszs < _T_SZS:  # within main range
@@ -374,10 +460,10 @@ def s_tp(h, mv, best, dr, val, od, fh, mob, incheck):
 
 
 
-
+@micropython.native
 def reset_tp_score():
     global tp_scored
-    for hind in range(4):
+    for hind in range(T_SLOTS):
         for i in range(0, t_szs[hind] << 1, 2):
             if (tp_scored[hind][i+1] >> 15)-16384 != _MT_LW:  # mate is a mate
                 tp_scored[hind][i+1] = 0x8000 | (-_MT_UP+16384)
@@ -397,11 +483,10 @@ def g_kll(pdpth):
 # hits = [dict(),dict(),dict(),dict()]
 # hits_i = [dict(),dict(),dict(),dict()]
 
-
-def g_sc(h, dr, od):
+@micropython.native
+def g_sc(h, dr, od, board):
     """Get a score from the score table"""
     global tp_scoreh, tp_scored
-    board = position[0]
 
     # if dr<_T_SZS2 and h==tp_scoreh2[dr]:
     #     e = tp_scored2[(dr << 1)+1]
@@ -410,23 +495,23 @@ def g_sc(h, dr, od):
     #     position[4] = (mv >> 14)-512 # mobility
     #     mv = mv & 0x03FFF
     # else:
-    hind = (h) & 3
+    hind = (h) & (T_SLOTS-1)
     tscd = tp_scored[hind]
     if dr > max_d_sc[hind]:
-        return 0, _MT_UP, 0, False, 0
-    try:
-        i = tp_scoreh[hind].index(h, 0, t_szs[hind])
+        return 0, -_MT_UP, 0x8000, 0, 0 # impossible fail high e < g always
+    i = get_index(h, tp_scoreh[hind], 0, t_szs[hind])
+    if i >=0:
         # hits[hind][i]=hits[hind].get(i,0)+1
         e = tscd[(i << 1)+1]
         # hits_i[hind][iter-c_iter]=hits_i[hind].get(iter-c_iter,0)+1
         tscd[(i << 1)+1] = (e & 0x1FFFFFF) | (iter << 25)
         mv = tscd[i << 1] 
-        position[4] = (((mv >> 14)& 0x3FF)-512)  # mobility
-        incheck = (mv >> 29)<<1 # to return 0x02 if incheck we shift 29 instead of 29
+        position[4] = ((((mv >> 14)& 0x3FF)-512))*4-2  # mobility
+        incheck = (mv >> 29)<<2 # to return 0x04 if incheck we shift 27 instead of 29
         mv = mv & 0x03FFF
         
-    except ValueError:
-        return 0,  _MT_UP, 0, False, 0
+    else:
+        return 0,  -_MT_UP, 0x8000, 0, 0 # impossible fail high e < g always
 
     # sd = (e >> 16) & 0xF
     sod = ((e >> 20) & 0x1F)-16
@@ -436,51 +521,53 @@ def g_sc(h, dr, od):
     # and does not end with a white piece
 
     if (board[mv >> 8] > 5) or (board[mv & 63] < 6) or (board[mv>>8]==_P and mv>>8<mv&63):
-        return 0, _MT_UP, 0, False, 0
+        return 0, _MT_UP, 0, 0, 0
     # We need to be sure, that the stored search for the score was over the same
-    # nodes as the current search, so the evaluation depth has to be the same 
-    if (sod != od):
-        return mv, -_MT_UP, 0x8000, True, incheck
+    # nodes as the current search, so the evaluation depth has to be the same or greater
+    if (sod < od):
+        return mv, -_MT_UP, 0x8000, -1, incheck
     fh = e & 0x8000
     best = (e & 0x7FFF) - 16384
-    return mv, best, fh, True, incheck
+    return mv, best, fh, 1, incheck
 
 
-def reset_pos(omv, sc, lwc_bc_ep_kp, dif, omb):
+def reset_pos(omv, sc, lwc_bc_ep_kp, dif, omb, h):
     # board, ksq, wc_bc_ep_kp, pscore = position
     pos = position
     # if there wasn't a move no need to reset
-    if not omv:
-        return
-    reverse()
     pos[3] = sc
     pos[2] = lwc_bc_ep_kp
     pos[4] = omb
+    pos[5] = h
+    if not omv:
+        return
+    reverse()
     restore(omv, dif)
 
-# @micropython.native
-def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr):
+@micropython.native
+def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, max_time):
     """ Receives a position, the gamma,depth,can_null, qs and returns the best score for the position
         Let s* be the "true" score of the sub-tree we are searching.
         The method returns r, where
         if gamma >  s* then s* <= r < gamma  (A better upper bound)
         if gamma <= s* then gamma <= r <= s* (A better lower bound) """
-    global max_qs, nodes, gm_buf
-    board, ksq, wc_bc_ep_kp, sc, mob = pos
+    global max_qs, nodes
+    board, ksq, wc_bc_ep_kp, sc, mob, h = pos
     mqs = max_qs
 
     # Make the move
     osc = sc # original score
     omb = mob # original mobility
+    oh = h # original hash
     lwc_bc_ep_kp = wc_bc_ep_kp # local flags
     if omv:
-        dif = move(omv, val)
-        board, ksq, wc_bc_ep_kp, sc, mob = pos
+        dif = move(omv, val, pos)
+        board, ksq, wc_bc_ep_kp, sc, mob, h = pos
         q = board[omv & 0x3F]
     else:
         dif = None
         q = 6 | ((wc_bc_ep_kp>>20)<<3)
-
+    mob = (mob+2)>>2
     ret = 0
     best_mv = 0
     turn = wc_bc_ep_kp>>20
@@ -509,31 +596,37 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr):
                 break
         
         nodes += 1
-        # kill switch if we are 50% more than the allowed nodes
-        if 10*nodes > 15*max_nodes or (max_time and int(monotonic()*1000) > max_time):
+        # kill switch if we are 50% more than the allowed nodes or after max_time
+        if 10*nodes > 15*max_nodes or (max_time and (monotonic() - max_time)>0):
             ret, best = 1, _CANCEL
-            break
+            break                
+
 
         entry = None
-        # hash as a smallint to save memory
-        h = ghash()
         # Calculate the ply depth (distance from root)
         pdpth = req_d - od
         # Look for the strongest move from last time, the hash-move.
         # and look in the table if we have already searched this position before.
-        hmove, e, fh, match, ret = g_sc(h, pdpth, od)
+        hmove, e, fh, match, ret = g_sc(h, pdpth, od, board)
         if fh:  # it was a fail high
             if e >= g:
                 ret, best, best_mv = 1, e, hmove
                 break
+            elif match>0:
+                hbest = e
+                best = e
             # if e!=-_MT_UP: hits[0][req]=hits[0].get(req,0)+1
         elif e < g:  # it was a fail low
             ret, best = 1, e
             break
         if match:
-            mb = (pos[4]-mob) 
+            # positive match means full match
+            # negative match means only mobility and incheck
+            if match>0:
+                ohmove = hmove
+            mb = (((pos[4]+2)>>2)-mob+1) 
         else:
-            mb = 0
+            mb = 1 # turn bonus
         # Depth <= 0 is QSearch. Here any position is searched as deeply as defined by _MAX_QS
         # if lmr and not incheck:
         #     d = od-2 if od-2 > 0 else 0
@@ -548,35 +641,18 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr):
 
 
         # in check?
+        # keep track of incheck, counter-incheck, just moved out of check
         incheck = incheck >> 1
-        # if match:
-        #     incheck = ret | incheck
-        # else:
-        incheck = (incheck | 2) if makes_check(
-                ksq & 0xFF, 0x08, pos, eg) else incheck
+        if match:
+             incheck = ret | incheck
+        else:
+            incheck = (incheck | 4) if makes_check(
+                    ksq & 0xFF, 0x08, pos, eg) else incheck
 
         # if we reached the maximum depth in quiescent search and not in check, return the score
-        if (od < -max_qs and not incheck):
+        if (od < -mqs and not incheck&4):
             ret, best = 1, sc + mb 
             break
-
-        # Reverse / Forward futility pruning (non-qsearch)
-        # Only when not in check and not in qsearch
-        # If static score is already far above gamma and ply is above 2, accept it
-        # If static score is already far below gamma and ply is above 2, accept it
-        # if match:
-        #     if (not incheck and (q==14 or q==6) and d > 0 and pdpth > 2 and 
-        #             ((sc + mb + val +(_QS)*d*9) < g or (sc + mb + val - (_QS)*d*10) >= g)):
-                    
-        #         ret, best = 1, sc + mb + val
-        #         break
-        # else:
-        #     if (not incheck and (q==14 or q==6) and d > 0 and pdpth > 2 and 
-        #             ((sc + mb + val +(_QS)*d*9) < g or (sc + mb + val - (_QS)*d*10) >= g)):
-                    
-        #         ret, best = 1, sc + mb + val
-        #         break
-
 
         best = -_MT_UP
         ret = 0
@@ -594,23 +670,26 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr):
             # But still.... We just have to move stand-pat to be before null-move.
             # if depth > 2 and can_null and any(c in pos.board for c in "RBNQ"):
             # if depth > 2 and can_null and any(c in pos.board for c in "RBNQ") and abs(pos.score) < 500:
-            if not incheck&2 and d > 2 and cn  and abs(sc) < 125:
+            if not incheck and d > 2 and cn  and abs(sc) < 125:
                 lwc = wc_bc_ep_kp
                 rotate(True)
                 res = bound(pos, 1-g, d-3 , False, 0, mb,
-                            gm, ind, gmv, incheck, 0)
-                res = -((res & 0xFFFF)-16384)
+                            gm, ind, gmv, incheck, 0, gm_buf, req_d, max_time)
                 rotate()
+                res = -((res & 0xFFFF)-16384)                
                 pos[2] = lwc
                 best = res if res > best else best
                 if res >= g:
                     best_mv = 0
                     break
+                if not match:
+                    mob = (pos[4]+2)>>2
+
             # Increase the quiescent search depth if in-check and in first iteration
-            if (incheck or (req_d == 1)) and max_qs < 2*_MAX_QS:
+            if (incheck&4 or (req_d == 1)) and mqs < 2*_MAX_QS:
                 max_qs += 1
 
-            if d == 0 and not incheck:
+            if d == 0 and not incheck&4:
                 best = sc + mb if sc + mb > best else best
             # For QSearch we have a different kind of null-move, namely we can just stop
             # and not capture anything else.
@@ -620,24 +699,28 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr):
             # Is there is no killer move in the kpv
             # try to find one with a more shallow search.
             # This is known as Internal Iterative Deepening (IID).
+            # can_null=False, since we want to make sure we actually find a move.
             if not hmove and d > 2:
                 hmove = bound(pos, g, d - 2, False, 0, 0,
-                               gm, ind, gmv, incheck, 0)
+                               gm, ind, gmv, incheck, 0, gm_buf, req_d, max_time)
                 hmove = hmove >> 16
+
 
 
             # If depth == 0 we only try moves with high intrinsic score (captures and
             # promotions). Otherwise we do all moves. This is called quiescent search.
             # If in check or moving out of check, we increase the range.
-            val_lower = (_QS - (d+int(incheck > 0)) * _QS_A)
+            val_lower = (_QS - (d+(int(incheck > 0)<<2)) * _QS_A)
             if val_lower >= _QS and od < -5 and not incheck:
-                val_lower += 1
-            # if lmr and not incheck:
-            #     max_qs = max_qs - 1
+                val_lower += 1 
+            if lmr and not incheck:
+                max_qs = max_qs - 1
 
             # Only play the move if it would be included at the current val-limit,
             # since otherwise we'd get search instability.
             # We will skip the hash-move in the main loop below
+            # we will research the hash move even with exact match
+            # since the gamma is different
             if hmove != 0:
                 p = board[hmove >> 8]
                 t = (p&7) if (not eg or op_mode) else PSTMAP[p&7] 
@@ -646,13 +729,21 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr):
                     (wc_bc_ep_kp >> 20) * 7, eg, kp, (wc_bc_ep_kp>>8) & 0xFF,t)
                 if val >= val_lower:
                     res = bound(pos, 1-g, od-1, True, hmove,
-                                val+mb, gm, ind, None, incheck, 0)
+                                val+mb, gm, ind, None, incheck, 0, gm_buf, req_d, max_time)
                     res = -((res & 0xFFFF)-16384)
                     best = res if res > best else best
                     if res>=g:
                         best_mv = hmove
                         break
-
+                    if match > 0 and (incheck&5 or res > hbest+3):
+                        # look at previous moves only if the new mobility is at least 4 points greater than the stored one
+                        # (simple heuristic that seems to work)
+                        match = 0
+                else:
+                    match = 0
+            else:
+                # look at previous moves 
+                match = 0
 
             if gmv:
                 gm = [m for m in gmv if (
@@ -662,42 +753,49 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr):
                 gm = gm_buf
             else:
                 l = gen_moves(gm, ind, pos, val_lower, g_kll(pdpth), lmr, h_va[turn], max_h_mv[turn], h_mv[turn], eg, op_mode)
-                # if fh and e!=-_MT_UP: hits[1][req]=hits[1].get(req,0)+1
-            
-            # if match:
-            #     assert  (pos[4]-mob) == mb
+            if omv == 0:
+                omb = pos[4]
+                mb = 1
+            else:                 
+                mb = (((pos[4]+2)>>2)-mob+1)
+                
 
-            mb = (pos[4]-mob) 
-            
+
             # Reverse / Forward futility pruning (non-qsearch)
             # Only when not in check and not in qsearch
             # If static score is already far above gamma and ply is above 2, accept it
             # If static score is already far below gamma and ply is above 2, accept it 
             val = ((gm[ind+l-1] & 0x00FFFFFF) >> 14) - 512 
             if (not incheck and (q==14 or q==6) and d > 0 and pdpth > 2 and 
-                   ((sc + mb + val + _QS*d*5) < g or (sc + mb + val - _QS*d*5) >= g)):
-                   
-                best = sc + mb + val
+                   ((sc + mb + val + (_QS*d*5)) < g or (sc + mb + val - (_QS*d*5)) >= g)):
+                res = sc + val + mb
+                best = res if res > best else best
                 break
             # Then all the other moves in the position. We sort them by the value
             # and we take them in reverse order to get the best ones first. We also
             # skip the move if it's the killer move, since we already tried that one.
             # the ones that are below the val_lower limit (Quiescent Search) are already filtered out.
-            ret = l  # reuse variable to save memory in recursion
+            lmax = l  
             while l:
                 l -= 1
                 mvv = gm[ind+l] & 0x00FFFFFF
                 val = (mvv >> 14) - 512 
                 # prev_res = sc+val
                 best_mv = (mvv & 0x3FFF)
-
+                if match>0:
+                    if ohmove!=best_mv:
+                        # lmax-=1
+                        continue
+                    else:
+                        match = 0
                 if best_mv == hmove:
+                    # lmax-=1
                     continue
 
                 # In quiescent search, if the new score is much less than gamma,
                 # we can break since it cannot be much better (unless a high exchange)
                 # This is known as futility pruning.
-                if od < 0 and sc + val + mb + abs(val) + abs(mb) < g:
+                if od < 0 and (sc + val + mb +(abs(val) + abs(mb)) < g):
                     res = sc + val + mb
                     best = res if res > best else best
                     break  # inner while
@@ -709,10 +807,11 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr):
                         break  # inner while
                 else:
                     # Simple Late Move Reductions (LMR)
-                    if (ret-l > 3 and pdpth > 2):
+                    if not lmr and not incheck&4 and ((lmax-l > 3 and pdpth > 2)):
                         lmr = 1
+
                     res = bound(pos, 1-g, od-1, True, best_mv,
-                                val + mb, gm, ind+l, None, incheck, lmr)
+                                val + mb, gm, ind+l, None, incheck, lmr, gm_buf, req_d, max_time)
                     res = -((res & 0xFFFF)-16384) 
                     best = res if res > best else best
                     
@@ -740,16 +839,18 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr):
 
         if best == -_MT_UP:
             best_mv = 0
-            best = -_MT_LW if incheck == 2 else 0
+            best = -_MT_LW if incheck&4 else 0
+
+
 
         # for small transposition tables it is better to store the score in the table
         # when the score is better than the gamma so that moves and scores can be stored in the
         # same table
         
-        if best >= g and ((od >= -16 and best_mv != 0)):
-            s_tp(h, best_mv, best, pdpth, val, od, 0x8000, pos[4], incheck)
+        if best >= g and (od >= -16 and ((best_mv != 0) or incheck&4)):
+            s_tp(h, best_mv, best, pdpth, val, od, 0x8000, (pos[4]+2)>>2, incheck)
         if best < g and not best_mv and hmove and ((od >= -16)) and fh:
-            s_tp(h, hmove, best, pdpth, val, od, 0, pos[4], incheck)
+            s_tp(h, hmove, best, pdpth, val, od, 0, (pos[4]+2)>>2, incheck)
         # elif best < g and not best_mv and ((od >= -16)):
         #     s_tp(h, 0, best, pdpth, val, od, 0, pos[4], incheck)
 
@@ -757,7 +858,7 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr):
         # reset max_qs if modified
         max_qs = mqs
 
-    reset_pos(omv, osc, lwc_bc_ep_kp, dif, omb)
+    reset_pos(omv, osc, lwc_bc_ep_kp, dif, omb, oh)
     if best == _CANCEL:
         return _NCANCEL
     # ic(-best,best_mv)
@@ -798,10 +899,11 @@ def mk_mv(mv):
                     op_ind = mvs[i[0]][1]
                     op_mode = 2
 
-    history.append(ghash())
     if len(history) > _MAX_HIST:
         history.pop(0)
-    return move(mv)
+    dif = move(mv, None, position)
+    history.append(position[5])
+    return dif 
 
 
 def g_next_move(op):
@@ -822,11 +924,12 @@ def g_next_move(op):
 def search(gmv):
     """Iterative deepening MTD-bi search"""
     global nodes, req_d, tp_scored, tp_scoreh,  max_d_sc, t_szs, op_ind, iter
-    global eg, max_qs, req_d, start_time
+    global eg, max_qs, req_d, start_time, b_overflow
 
-    _, _, _, pscore, _ = position
+    _, _, _, pscore, _, _ = position
 
     nodes = 0
+    usunfish_gmv.b_overflow = 0
     if not gmv:
         gmv = g_mv()
     # Check if we are in opening mode
@@ -849,7 +952,7 @@ def search(gmv):
         lower, upper = -_MT_LW, _MT_LW
         eval_dist = upper - lower
         while eval_dist > _EVAL_ROUGHNESS + max(0, (req_d-4)*2):
-            res = bound(position, g, req_d, False, 0, 0, gm_buf, 0, gmv, 0, 0)
+            res = bound(position, g, req_d, False, 0, 0, gm_buf, 0, gmv, 0, 0, gm_buf, req_d, max_time)
             # gmv.sort()
             if res == _NCANCEL:
                 yield req_d, g, _NCANCEL, 0
@@ -862,11 +965,11 @@ def search(gmv):
             eval_dist = upper - lower
             yield req_d, g, score, best_mv
             g = (lower + upper + 1) // 2
-            iter += 1
+            iter = (iter + 1)%64
         # reset_tp_score()
 
 
-history = list()
+
 
 
 def g_m():
@@ -876,14 +979,14 @@ def g_m():
     gm = gm[:l]
     return gm
 
-
+@micropython.native
 def g_mv():
     global max_qs, eg, pst
-    global t_szs, max_d_sc, _QS
+    global t_szs, max_d_sc
     global max_h_mv
 
     pos = position
-    lbrd, _, wc_bc_ep_kp, pscore, _ = pos
+    lbrd, _, wc_bc_ep_kp, pscore, _, _ = pos
 
     turn = wc_bc_ep_kp >> 20
     # detect endgame and adjust score and pst accordingly
@@ -895,7 +998,7 @@ def g_mv():
     #     qr.sort()
     #     qr = bytes(qr)
     #     if len(qr)<=2 and (qr==b'\x03\x0B' or qr==b'\x03' or qr=='b\x0B'):
-        max_qs += 1
+        max_qs = _MAX_QS + 1
         eg = 1
         # ok = ksq & 0xFF
         # ek = ksq >> 8
@@ -910,24 +1013,10 @@ def g_mv():
             elif pp<6:
                 pscore -= pst[t][i^56^xor]
 
-        # adjust score with the endgame pst for kings
-        # pstp = pst[_K]
-        # pstpeg = pst[6]
-        # pscore = pscore-pstp[ok ^ xor]+pstpeg[ok ^ xor] - \
-        #     pstp[(63-ek) ^ xor ^ 7]+pstpeg[(63-ek) ^ xor ^ 7]
-        # # adjust score with the endgame pst for pawns
-        # pstp = pst[_P]
-        # pstpeg = pst[7]
-        # for i, p in ((i, p) for i, p in enumerate(lbrd) if p & 7 == _P):
-        #     if p == _P:  # white pawn
-        #         pscore = pscore-pstp[i ^ xor] + pstpeg[i ^ xor]
-        #     else:  # black pawn
-        #         pscore = pscore-pstp[(63-i) ^ xor ^ 7] + \
-        #             pstpeg[(63-i) ^ xor ^ 7]
         pos[3] = pscore
 
 
-    ts = [0,0,0,0]
+    ts = [0,] * T_SLOTS
     d = 0
 
     if ply < 2:
@@ -959,15 +1048,16 @@ def g_mv():
                 mv = h_mv[turn][j]
                 if mv in gmm:
                     v = h_va[turn][j] >> 2
-                    h_mv[turn][i] = mv
-                    h_va[turn][i] = v
-                    i += 1
+                    if v >0:
+                        h_mv[turn][i] = mv
+                        h_va[turn][i] = v
+                        i += 1
             max_h_mv[turn] = i
         pos[2] = lwc_bc_ep_kp
         # put the previous PV at the beginning
         d = recalc_tp(0, ts)
 
-    max_d_sc = [d,d, d, d]
+    max_d_sc = [d,] * T_SLOTS
     t_szs = ts
 
   
@@ -977,9 +1067,8 @@ def g_mv():
 def recalc_tp(d, ts):
     # move the PV
     # to the beginning
-    _, _, wc_bc_ep_kp, pscore, mob = position
-    h = ghash()
-    hind = (h) & 3
+    _, _, wc_bc_ep_kp, pscore, mob, h = position
+    hind = (h) & (T_SLOTS-1)
     tscd, tsch = tp_scored[hind],tp_scoreh[hind]
     try:
         # avoid including the already inserted hashes
@@ -1001,9 +1090,9 @@ def recalc_tp(d, ts):
         lwc_bc_ep_kp = wc_bc_ep_kp
         # empty the matching pos to avoid stack overflow
         tsch[i]=0
-        dif = move(mv, 0)
+        dif = move(mv, 0, position)
         d = recalc_tp(d+1, ts)
-        reset_pos(mv, pscore, lwc_bc_ep_kp, dif, mob)
+        reset_pos(mv, pscore, lwc_bc_ep_kp, dif, mob, h)
         return d
     else:
         return d
@@ -1011,7 +1100,7 @@ def recalc_tp(d, ts):
 
 def can_kill_king(mv, ccheck=True):
     pos = position
-    lbrd, ksq, wc_bc_ep_kp, pscore, mob = pos
+    lbrd, ksq, wc_bc_ep_kp, pscore, mob, h = pos
     # If we just checked for opponent moves capturing the king, we would miss
     # captures in case of illegal castling.
     res = False
@@ -1019,11 +1108,11 @@ def can_kill_king(mv, ccheck=True):
     sc = pscore
     lwc_bc_ep_kp = wc_bc_ep_kp
     if mv != 0:
-        dif = move(mv)
+        dif = move(mv, None, pos)
     else:
         by_black = 0x08
 
-    lbrd, ksq, wc_bc_ep_kp, pscore, _ = position
+    lbrd, ksq, wc_bc_ep_kp, pscore, _, _ = position
     if by_black:
         king = ksq&0xff
     else:
@@ -1038,8 +1127,9 @@ def can_kill_king(mv, ccheck=True):
                     res = True
                     break
     if mv > 0:
-        reset_pos(mv, sc, lwc_bc_ep_kp, dif, mob)
+        reset_pos(mv, sc, lwc_bc_ep_kp, dif, mob, h)
     return res
+
 
 
 ###############################################################################
@@ -1061,7 +1151,7 @@ def parse_move(move_str, white_pov):
     i, j, prom = parse(move_str[:2]), parse(
         move_str[2:4]), move_str[4:].upper()
     if not white_pov:
-        i, j = 63 - i, 63 - j
+        i, j = 63^i, 63^j
     mv = i << 8 | j | mapping.index(prom) << 6
     return mv
 
@@ -1074,7 +1164,7 @@ def render_mv(mv, turn=0):
     if j < 8 and position[0][i] | 8 == _P+8:
         prom = mapping[((mv >> 6) & 3)+1].lower()
     if turn == 1:
-        i, j = 63 - i, 63 - j
+        i, j = 63^i, 63^j
     return render(i) + render(j) + prom
 
 mapping = 'PNBRQK. pnbrqk. '

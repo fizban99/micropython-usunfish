@@ -1,5 +1,5 @@
 
-from usunfish_data import *
+from usunfish_common import *
 from random import randint
 try:
     import micropython
@@ -12,6 +12,7 @@ except ImportError:
     def const(x):
         return x
 
+b_overflow = 0
 vector_list = []
 # def const(x): return x
 ###############################################################################
@@ -50,9 +51,6 @@ _BP = const(8)
 _QS = const(16)
 # limit depth for opening book
 _MAX_OP_D = const(11)
-
-
-buff = [0]*9 # kingring squares and black pawns
 
 def parse_sibl(c_ind, d, op):
     def op_get(i, op):
@@ -93,7 +91,7 @@ def parse_sibl(c_ind, d, op):
 ###############################################################################
 # Chess logic
 ###############################################################################
-# @micropython.native
+@micropython.native
 def makes_check(ksq, bbit, position, eg):
     """
     Return True if the square king_sq is attacked by the side 'by_white'.
@@ -161,13 +159,14 @@ def makes_check(ksq, bbit, position, eg):
     return False
 
 
-# @micropython.native
+@micropython.native
 def ma(moves, ind, mv, val, lvalue, kll, h_va, max_h_mv, h_mv, p, q, prom, lmr, empt):
     """ Move sorting logic
         A virtual bonus is added to the score for sorting
         and later substracted for stability of the sunfish scoring logic
     """
     # global l_max
+    global b_overflow
 
     if (val < lvalue or (lvalue >= _QS and prom < 3) ):
         # only add moves above the threshold
@@ -196,9 +195,10 @@ def ma(moves, ind, mv, val, lvalue, kll, h_va, max_h_mv, h_mv, p, q, prom, lmr, 
         order = 40
     elif max_h_mv:
         # rest of moves ordered by history heuristics (1-40)
-        try:
-            order = h_va[h_mv.index(mv, 0, max_h_mv)]
-        except ValueError:
+        i = get_index(mv, h_mv, 0, max_h_mv)
+        if i >=0:
+            order = h_va[i]
+        else:
             # lastly moves not in history
             order = 0
     else:
@@ -206,16 +206,17 @@ def ma(moves, ind, mv, val, lvalue, kll, h_va, max_h_mv, h_mv, p, q, prom, lmr, 
 
     if not (lmr and order==0):
         # our naive LMR just disregards low value moves not in history
-        try:
+        if ind < len(moves):
             moves[ind] = ((mv | ((val + 512) << 14)) | (order << 24))
             ind += 1
-        except IndexError:
+        else:
             # assert False
+            b_overflow += 1
             pass
    
     return ind
 
-# @micropython.native
+@micropython.native
 def value(lpst, i, j, prom, p0, q, xor, eg, kp, ep, p):
     # base PST delta
     score = lpst[p][j ^ xor] - lpst[p][i ^ xor]
@@ -250,7 +251,7 @@ def value(lpst, i, j, prom, p0, q, xor, eg, kp, ep, p):
 
     return score
 
-
+@micropython.native
 def king_ring(k, buff):
     r, f = k>>3, k&7
     i=0
@@ -265,7 +266,7 @@ def king_ring(k, buff):
                     i += 1
     return buff[:i]
 
-
+@micropython.native
 def rq_mobility(r_file, q_file, enemy_pawns, own_pawns, pf2, sop_r, sop_q, op_r, op_q):
     pf1 = enemy_pawns & (0xFF ^ own_pawns)
 
@@ -280,6 +281,7 @@ def rq_mobility(r_file, q_file, enemy_pawns, own_pawns, pf2, sop_r, sop_q, op_r,
     m += sum((op >> k) & 1 for k in range(8)) * op_q
     return m
 
+@micropython.native
 def gen_moves(gm, ind, pos, lvalue, kll, lmr, hva, mhva, hmv, eg, op_mode):
     """A state of a chess game contains:
     board -- a 64 integer list representation of the board  
@@ -294,10 +296,10 @@ def gen_moves(gm, ind, pos, lvalue, kll, lmr, hva, mhva, hmv, eg, op_mode):
     # as defined in the 'directions' map. The rays are broken e.g. by
     # captures or immediately in case of pieces such as knights.
     
-    b, ksq, wcek, _ , _ = pos
+    b, ksq, wcek, _ , _, _ = pos
     lpst = pst
     l = ind
-    lbuff= buff
+    lbuff=  [0]*9 # kingring squares and black pawns
     # unpack packed status 
     ep = (wcek >>8) & 0xFF  # en passant square
     kp = (wcek & 0xFF) # king passant square
@@ -592,5 +594,5 @@ def gen_moves(gm, ind, pos, lvalue, kll, lmr, hva, mhva, hmv, eg, op_mode):
                     mob[1] += _CTPA_MG + _MXEPA_MG* mxe *(r-2)+ _MXOPA_MG * mxo *(r-2)+ _RRPA_MG*(r-2) + _PHPA_MG * phlx + _PPPA_MG * ppawn # bonus for non blocked pawns
     # Store the mobility in the position list
     # round it up with +2
-    pos[4] = ((mob[0]-mob[1]+2)//4) 
+    pos[4] = (mob[0]-mob[1])
     return l

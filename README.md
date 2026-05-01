@@ -1,3 +1,5 @@
+![uSunfish Logo](./img/uSunfish_logo_128.png)
+
 # micropython-uSunfish
 
 MicroPython uSunfish Chess Engine
@@ -15,7 +17,7 @@ It is tested with MicroPython V1.27.0 on ESP32-S3, but it is not memory-intensiv
 
 This fork has the following enhancements:
 - Reduced memory footprint by extensively using some micropython features such as string interning and 31-bit smallints and removing the object-oriented approach of the original Sunfish.
-- It uses a small hash table to reduce node traversal time during sequential iterations of the iterative deepening MTD-bi search. The table stores only fail-high moves and employs a simple age-based replacement algorithm.
+- It uses a small hash table to reduce node traversal time during the sequential iterations of an iterative-deepening MTD-bi search. The table stores only fail-high moves and uses a simple age-based replacement policy. To save memory, it avoids a precomputed Zobrist hash and instead computes hashes with an integer hash function, trading lower memory use for additional computation.
 - It includes a small opening book of 1,768 plies derived from the Balsa_270423.pgn and Unique v110225 openings files.
 - As a reply of non-common openings, it has 5 different answers to non-common starting positions using the 400 moves.pgn file from https://www.scacchi64.com/downloads.html
 - The strength is set through the number of nodes evaluated. From level 1 (125 nodes) to level 7 (8000). At level 7 it is calibrated to just below 2100 Elo when playing against the Stockfish engine configured to simulate that rating and it takes around 60 seconds per move on a standard ESP32. Setting it to level 0, it plays at an extremely easy level. The level can be set in the `sunfish.py` file.
@@ -210,6 +212,13 @@ The format of the `bytes` object is described above in "inverted play".
 
 # The UCI interface
 
-The file uci.py implements a simple UCI interface that can be used with any UCI-compatible user interface. It currently only supports the `Skill_Level` option and `OwnBook` and does not include any time management, always playing at the specified skill level. 
+The file uci.py implements a simple UCI interface that can be used with any UCI-compatible user interface. It currently supports the following options
+- `Skill_Level` only active if `UCI_LimitStrength` set to true.
+- `OwnBook`. Whether to use its internal opening book or not.
+- `Hash Slots`. Each slot requires approximately 800 bytes. The default is 8 on ESP32 and 128 on Windows/Linux, except when using PyPy, where the default is 256.
+
+ 
 The Windows executable is just the micropython runtime with the micropython code frozen and autolaunching. It is compatible with [cutechess](https://cutechess.com/), [arena](http://www.playwitharena.de/) and [lucaschess](https://lucaschess.pythonanywhere.com/) and it is only around 600KB.
 You can also play on lichess at [level 0](https://lichess.org/@/uSunfish-l0), [level 1](https://lichess.org/@/uSunfish-l1) or [level 7](https://lichess.org/@/uSunfish-l7).
+
+There is also a pypy bundled version, around 250 ELO higher.

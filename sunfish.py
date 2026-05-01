@@ -29,7 +29,7 @@ MESSAGES = ("\n", "Check!", "Checkmate!", "Stalemate!", "Draw-rep")
 
 
 def threefold():
-    return u.history.count(u.ghash()) >= 3
+    return u.history.count(u.position[5]) >= 3
 
 def render(i):
     r, f = divmod(i - _A1, 8)
@@ -135,7 +135,7 @@ def main():
                 print(u.nodes, end="\r")
             if score >= gamma and mv:
                 bmv = mv
-            if  (lvl == -1 and (bmv or u.nodes > 125)) or (lvl > -1 and u.nodes > 125*(1<<lvl)) or (score== _MT_LW and depth>=3):
+            if  (lvl == -1 and (bmv or u.nodes > 125)) or (lvl > -1 and u.nodes > 125*(1<<lvl)):
                 break            
 
         if not bmv and gm:
@@ -158,7 +158,7 @@ def game(iboard=None):
     if iboard:
         u.last_mv = 15
         u.ply=2        
-        u.position = [make_board(iboard), 1084, 1015936, 3, 2]        
+        u.position = [make_board(iboard), 1084, 1015936, 3, 2, 0]
     else:
         u.last_mv = -1
         u.ply=0
@@ -166,8 +166,10 @@ def game(iboard=None):
                       60 | (4 << 8),  # ksq
                       1015936,  # wc_bc_ep_kp
                       0, # pscore
-                      0, # mobility 
-                        ] 
+                      0, # mobility
+                      0, # hash
+                        ]
+    u.hash_board()
         
     best_move = None
     amove = None
@@ -214,7 +216,7 @@ def game(iboard=None):
         for depth, gamma, score, mv in u.search(gmvs):
             if score >= gamma and mv:
                 bmv = mv
-            if  (lvl == -1 and (bmv or u.nodes > 125)) or (lvl > -1 and u.nodes > 125*(1<<lvl)) or (score== _MT_LW and depth>=3):
+            if  (lvl == -1 and (bmv or u.nodes > 125)) or (lvl > -1 and u.nodes > 125*(1<<lvl)):
                 break            
 
         if not bmv and gm:
@@ -242,4 +244,5 @@ def make_board(b):
 
 if __name__ == "__main__":
     main()
+
 
