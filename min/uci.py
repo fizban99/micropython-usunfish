@@ -2,8 +2,9 @@ import os,usunfish_engine as u
 from usunfish_engine import render_mv,parse_move
 from random import seed
 import sys
+platform=sys.platform
 from usunfish_common import monotonic
-try:import micropython
+try:import micropython;platform=platform+' - micropython'
 except ImportError:
 	def const(x):return x
 version='uSunfish 1.0'
@@ -37,8 +38,8 @@ def reset_pos():
 	u.eg=0;u.last_mv=-1;u.ply=0;u.op_ind=_OP_IND;u.max_qs=_MAX_QS;u.history.clear;u.position[:]=hist[-1][:];u.position[0]=hist[-1][0][:];u.history.append(u.position[5])
 _T_SZS=const(128)
 def recalc_tp():u.t_szs=[0]*u.T_SLOTS;u.tp_scoreh=[[0]*_T_SZS for A in range(u.T_SLOTS)];u.tp_scored=[[0]*(_T_SZS*2)for A in range(u.T_SLOTS)];u.max_d_sc=[0]*u.T_SLOTS
-if sys.platform in('win32','linux'):u.T_SLOTS=128;recalc_tp()
-if hasattr(sys,'pypy_version_info'):u.T_SLOTS=256;recalc_tp()
+if platform in('win32','linux'):u.T_SLOTS=128;recalc_tp()
+if hasattr(sys,'pypy_version_info'):u.T_SLOTS=256;platform+=' - pypy';recalc_tp()
 own_book=True
 while True:
 	line=sys.stdin.readline()
@@ -46,7 +47,7 @@ while True:
 	line=line.strip()
 	if not line:continue
 	args=line.split()
-	if args[0]=='uci':send('id name',version);send('id author',f"fizban99 ({year})");send(f"option name Skill Level type spin default {LEVEL} min 0 max 7");send('option name OwnBook type check default true');send(f"option name UCI_LimitStrength type check default {limit_strength}");send(f"option name Hash Slots type combo default 128 var 2 var 4 var 8 var 16 var 32 var 64 var 128 var 256 var 512 var 1024 default {u.T_SLOTS}");send('uciok')
+	if args[0]=='uci':send('id name',version+f" ({platform})");send('id author',f"fizban99 ({year})");send(f"option name Skill Level type spin default {LEVEL} min 0 max 7");send('option name OwnBook type check default true');send(f"option name UCI_LimitStrength type check default {limit_strength}");send(f"option name Hash Slots type combo default 128 var 2 var 4 var 8 var 16 var 32 var 64 var 128 var 256 var 512 var 1024 default {u.T_SLOTS}");send('uciok')
 	elif args[0]=='isready':send('readyok')
 	elif args[0]=='quit':break
 	elif args[0:5]==['setoption','name','Skill','Level','value']:LEVEL=args[5].strip().lower()

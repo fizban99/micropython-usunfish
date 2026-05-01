@@ -3,9 +3,11 @@ import usunfish_engine as u
 from usunfish_engine import render_mv, parse_move
 from random import seed
 import sys
+platform = sys.platform
 from usunfish_common import monotonic
 try:
     import micropython
+    platform = platform + " - micropython"
 except ImportError:
     def const(x):
         return x
@@ -103,12 +105,13 @@ def recalc_tp():
     u.tp_scored = [[0] * (_T_SZS * 2) for _ in range(u.T_SLOTS)]
     u.max_d_sc = [0] * u.T_SLOTS    
 
-if sys.platform in ("win32", "linux"):
+if platform in ("win32", "linux"):
     u.T_SLOTS = 128
     recalc_tp()
 
 if hasattr(sys, "pypy_version_info"):
     u.T_SLOTS = 256
+    platform += " - pypy"
     recalc_tp()
 
 
@@ -122,7 +125,7 @@ while True:
         continue
     args = line.split()
     if args[0] == "uci":
-        send("id name", version )
+        send("id name", version + f" ({platform})" )
         send("id author", f"fizban99 ({year})")
         send(f"option name Skill Level type spin default {LEVEL} min 0 max 7")
         send("option name OwnBook type check default true")
