@@ -48,7 +48,7 @@ while True:
 	line=line.strip()
 	if not line:continue
 	args=line.split()
-	if args[0]=='uci':send('id name',version+f" ({platform})");send('id author',f"fizban99 ({year})");send(f"option name Skill Level type spin default {LEVEL} min 0 max 7");send('option name OwnBook type check default true');send(f"option name UCI_LimitStrength type check default {limit_strength}");send(f"option name Hash Slots type combo default {u.T_SLOTS} var 2 var 4 var 8 var 16 var 32 var 64 var 128 var 256 var 512 var 1024");send('uciok')
+	if args[0]=='uci':send('id name',version+f" ({platform}{runtime})");send('id author',f"fizban99 ({year})");send(f"option name Skill Level type spin default {LEVEL} min 0 max 7");send('option name OwnBook type check default true');send(f"option name UCI_LimitStrength type check default {limit_strength}");send(f"option name Hash Slots type combo default {u.T_SLOTS} var 2 var 4 var 8 var 16 var 32 var 64 var 128 var 256 var 512 var 1024");send('uciok')
 	elif args[0]=='isready':send('readyok')
 	elif args[0]=='quit':break
 	elif args[0:5]==['setoption','name','Skill','Level','value']:LEVEL=args[5].strip().lower()

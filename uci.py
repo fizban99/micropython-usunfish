@@ -125,7 +125,7 @@ while True:
         continue
     args = line.split()
     if args[0] == "uci":
-        send("id name", version + f" ({platform})" )
+        send("id name", version + f" ({platform}{runtime})" )
         send("id author", f"fizban99 ({year})")
         send(f"option name Skill Level type spin default {LEVEL} min 0 max 7")
         send("option name OwnBook type check default true")
