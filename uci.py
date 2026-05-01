@@ -7,11 +7,11 @@ platform = sys.platform
 from usunfish_common import monotonic
 try:
     import micropython
-    platform = platform + " - micropython"
+    runtime = " - micropython"
 except ImportError:
     def const(x):
         return x
-
+    runtime = " - python"
 
 version = "uSunfish 1.0" 
 year = "2026"
@@ -111,7 +111,7 @@ if platform in ("win32", "linux"):
 
 if hasattr(sys, "pypy_version_info"):
     u.T_SLOTS = 256
-    platform += " - pypy"
+    runtime = " - pypy"
     recalc_tp()
 
 
@@ -149,8 +149,8 @@ while True:
     elif args[0:4] == ["setoption", "name", "UCI_LimitStrength", "value"]:
         limit_strength = True if args[4] == "true" else False
 
-    elif args[0:4] == ["setoption", "name", "Hash Slots", "value"]:
-        s = int(args[4])
+    elif args[0:5] == ["setoption", "name", "Hash", "Slots", "value"]:
+        s = int(args[5])
         if 2 <= s <= 1024 and s & (s - 1) == 0:
             u.T_SLOTS = s
             recalc_tp()

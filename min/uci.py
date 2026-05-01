@@ -4,9 +4,10 @@ from random import seed
 import sys
 platform=sys.platform
 from usunfish_common import monotonic
-try:import micropython;platform=platform+' - micropython'
+try:import micropython;runtime=' - micropython'
 except ImportError:
 	def const(x):return x
+	runtime=' - python'
 version='uSunfish 1.0'
 year='2026'
 _MT_LW=const(12680)
@@ -39,7 +40,7 @@ def reset_pos():
 _T_SZS=const(128)
 def recalc_tp():u.t_szs=[0]*u.T_SLOTS;u.tp_scoreh=[[0]*_T_SZS for A in range(u.T_SLOTS)];u.tp_scored=[[0]*(_T_SZS*2)for A in range(u.T_SLOTS)];u.max_d_sc=[0]*u.T_SLOTS
 if platform in('win32','linux'):u.T_SLOTS=128;recalc_tp()
-if hasattr(sys,'pypy_version_info'):u.T_SLOTS=256;platform+=' - pypy';recalc_tp()
+if hasattr(sys,'pypy_version_info'):u.T_SLOTS=256;runtime=' - pypy';recalc_tp()
 own_book=True
 while True:
 	line=sys.stdin.readline()
@@ -53,8 +54,8 @@ while True:
 	elif args[0:5]==['setoption','name','Skill','Level','value']:LEVEL=args[5].strip().lower()
 	elif args[0:4]==['setoption','name','OwnBook','value']:own_book=True if args[4]=='true'else False
 	elif args[0:4]==['setoption','name','UCI_LimitStrength','value']:limit_strength=True if args[4]=='true'else False
-	elif args[0:4]==['setoption','name','Hash Slots','value']:
-		s=int(args[4])
+	elif args[0:5]==['setoption','name','Hash','Slots','value']:
+		s=int(args[5])
 		if 2<=s<=1024 and s&s-1==0:u.T_SLOTS=s;recalc_tp()
 	elif args[:2]==['position','startpos']:
 		hist=[startpos];reset_pos()
