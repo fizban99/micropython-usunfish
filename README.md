@@ -16,7 +16,7 @@ It is tested with MicroPython V1.27.0 on ESP32-S3, but it is not memory-intensiv
 # fizban99 fork
 
 This fork has the following enhancements:
-- Reduced memory footprint by extensively using some micropython features such as 31-bit smallints or the const keyword, removing the object-oriented approach of the original Sunfish and avoiding yielding.
+- Reduced the memory footprint by extensively using MicroPython features such as 31-bit small integers and the const keyword. Evaluation scores are divided by 4 to fit within the 31 bit constraint. The object-oriented structure of the original Sunfish was also removed, and yielding was avoided.
 - It uses a small hash table to reduce node traversal time during the sequential iterations of an iterative-deepening MTD-bi search. The table stores only fail-high moves and uses a simple age-based replacement policy. To save memory, it avoids a precomputed Zobrist hash and instead computes hashes with an [integer hash function](https://github.com/skeeto/hash-prospector), trading memory use for CPU.
 - It includes a small opening book of 1,768 plies derived from the Balsa_270423.pgn and Unique v110225 openings files.
 - As a reply of non-common openings, it has 5 different answers to non-common starting positions using the 400 moves.pgn file from https://www.scacchi64.com/downloads.html
@@ -30,6 +30,7 @@ This fork has the following enhancements:
         - Under promotions and non-history quiets last
     - Basic Late Move Reduction (LMR) 
     - Agressive forward and reverse futility pruning.
+    - Check extensions
 - The pst and mobility tables have been tuned using the quiet-labeled.v7.epd positions file using the L-BFGS-B algorithm of the scipy library.
 - Instead of a string, the board is a 64-item list that is part of the global position. Although a list to store the board is memory-hungry, its updatable and faster for restoring the difference when returning from a recursive call.
 - Besides the original [Sunfish](https://github.com/thomasahle/sunfish), this engine also draws inspiration on [MinimalChess](https://github.com/lithander/MinimalChessEngine),  [4ku](https://github.com/kz04px/4ku) and [MadChess](https://www.madchess.net/)
@@ -223,4 +224,4 @@ The file uci.py implements a simple UCI interface that can be used with any UCI-
 The Windows executable is just the micropython runtime with the micropython code frozen and autolaunching the UCI interface using [my fork of MicroPython](https://github.com/fizban99/micropython_windows/tree/windows-msvc-native-v128). It is compatible with [cutechess](https://cutechess.com/), [arena](http://www.playwitharena.de/) and [lucaschess](https://lucaschess.pythonanywhere.com/) and it is only around 600KB.
 You can also play on lichess at [level 0](https://lichess.org/@/uSunfish-l0), [level 1](https://lichess.org/@/uSunfish-l1) or [level 7](https://lichess.org/@/uSunfish-l7).
 
-There is also a bundled PyPy version, which is around 250 Elo stronger. It includes an .exe launcher that starts the UCI interface using the bundled abridged PyPy package.
+There is also a bundled PyPy version, which is around 200 Elo stronger. It includes an .exe launcher that starts the UCI interface using the bundled abridged PyPy package. While the MicroPython version uses around 2.6MB of memory, the pypy version uses around 50MB. The original Sunfish, on the other hand, had no limits for the hash table and it could easily reach several gigabytes.

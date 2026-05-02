@@ -713,8 +713,7 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
             val_lower = (_QS - (d+(int(incheck > 0)<<2)) * _QS_A)
             if val_lower >= _QS and od < -5 and not incheck:
                 val_lower += 1 
-            if lmr and not incheck:
-                max_qs = max_qs - 1
+
 
             # Only play the move if it would be included at the current val-limit,
             # since otherwise we'd get search instability.
@@ -735,7 +734,8 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
                     if res>=g:
                         best_mv = hmove
                         break
-                    if match > 0 and (incheck&5 or res > hbest+3):
+                    # if match > 0 and (incheck&5 or res > hbest+3):
+                    if incheck&5 or (match > 0 and res > hbest+3):
                         # look at previous moves only if the new mobility is at least 4 points greater than the stored one
                         # (simple heuristic that seems to work)
                         match = 0
@@ -807,9 +807,10 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
                         break  # inner while
                 else:
                     # Simple Late Move Reductions (LMR)
-                    if not lmr and not incheck&4 and ((lmax-l > 3 and pdpth > 2)):
+                    if not lmr and not incheck&4 and ((lmax-l > 4 and pdpth > 3)):
                         lmr = 1
-
+                    elif incheck&5:
+                        lmr = 0
                     res = bound(pos, 1-g, od-1, True, best_mv,
                                 val + mb, gm, ind+l, None, incheck, lmr, gm_buf, req_d, max_time)
                     res = -((res & 0xFFFF)-16384) 

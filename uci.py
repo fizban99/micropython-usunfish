@@ -13,7 +13,7 @@ except ImportError:
         return x
     runtime = " - python"
 
-version = "uSunfish 1.0" 
+version = "uSunfish 1.0a" 
 year = "2026"
 _MT_LW = const(12680)
 _OP_IND = const(1)
