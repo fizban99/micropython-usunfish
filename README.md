@@ -220,7 +220,7 @@ The file uci.py implements a simple UCI interface that can be used with any UCI-
 
 # Windows version
 
-The Windows executable is just the micropython runtime with the micropython code frozen and autolaunching the UCI interface using [my fork of MicroPython](https://github.com/fizban99/micropython_windows). It is compatible with [cutechess](https://cutechess.com/), [arena](http://www.playwitharena.de/) and [lucaschess](https://lucaschess.pythonanywhere.com/) and it is only around 600KB.
+The Windows executable is just the micropython runtime with the micropython code frozen and autolaunching the UCI interface using [my fork of MicroPython](https://github.com/fizban99/micropython_windows/tree/windows-msvc-native-v128). It is compatible with [cutechess](https://cutechess.com/), [arena](http://www.playwitharena.de/) and [lucaschess](https://lucaschess.pythonanywhere.com/) and it is only around 600KB.
 You can also play on lichess at [level 0](https://lichess.org/@/uSunfish-l0), [level 1](https://lichess.org/@/uSunfish-l1) or [level 7](https://lichess.org/@/uSunfish-l7).
 
 There is also a bundled PyPy version, which is around 250 Elo stronger. It includes an .exe launcher that starts the UCI interface using the bundled abridged PyPy package.
