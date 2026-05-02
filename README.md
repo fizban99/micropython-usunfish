@@ -16,8 +16,8 @@ It is tested with MicroPython V1.27.0 on ESP32-S3, but it is not memory-intensiv
 # fizban99 fork
 
 This fork has the following enhancements:
-- Reduced memory footprint by extensively using some micropython features such as string interning and 31-bit smallints and removing the object-oriented approach of the original Sunfish.
-- It uses a small hash table to reduce node traversal time during the sequential iterations of an iterative-deepening MTD-bi search. The table stores only fail-high moves and uses a simple age-based replacement policy. To save memory, it avoids a precomputed Zobrist hash and instead computes hashes with an [integer hash function](https://github.com/skeeto/hash-prospector), trading lower memory use for additional computation.
+- Reduced memory footprint by extensively using some micropython features such as 31-bit smallints or the const keyword, removing the object-oriented approach of the original Sunfish and avoiding yielding.
+- It uses a small hash table to reduce node traversal time during the sequential iterations of an iterative-deepening MTD-bi search. The table stores only fail-high moves and uses a simple age-based replacement policy. To save memory, it avoids a precomputed Zobrist hash and instead computes hashes with an [integer hash function](https://github.com/skeeto/hash-prospector), trading memory use for CPU.
 - It includes a small opening book of 1,768 plies derived from the Balsa_270423.pgn and Unique v110225 openings files.
 - As a reply of non-common openings, it has 5 different answers to non-common starting positions using the 400 moves.pgn file from https://www.scacchi64.com/downloads.html
 - The strength is set through the number of nodes evaluated. From level 1 (125 nodes) to level 7 (8000). At level 7 it is calibrated to just below 2100 Elo when playing against the Stockfish engine configured to simulate that rating and it takes around 60 seconds per move on a standard ESP32. Setting it to level 0, it plays at an extremely easy level. The level can be set in the `sunfish.py` file.
@@ -34,7 +34,7 @@ This fork has the following enhancements:
 - Instead of a string, the board is a 64-item list that is part of the global position. Although a list to store the board is memory-hungry, its updatable and faster for restoring the difference when returning from a recursive call.
 - Besides the original [Sunfish](https://github.com/thomasahle/sunfish), this engine also draws inspiration on [MinimalChess](https://github.com/lithander/MinimalChessEngine),  [4ku](https://github.com/kz04px/4ku) and [MadChess](https://www.madchess.net/)
 
-# Installation
+# Installation on a MicroPython-compatible board
 
 The file may be installed on target hardware with `mpremote`:
 ```bash
@@ -215,10 +215,12 @@ The format of the `bytes` object is described above in "inverted play".
 The file uci.py implements a simple UCI interface that can be used with any UCI-compatible user interface. It currently supports the following options
 - `Skill_Level` only active if `UCI_LimitStrength` set to true.
 - `OwnBook`. Whether to use its internal opening book or not.
-- `Hash Slots`. Each slot requires approximately 800 bytes. The default is 8 on ESP32 and 128 on Windows/Linux, except when using PyPy, where the default is 256.
+- `Hash Slots`. Each slot requires approximately 1500 bytes. The default is 8 on ESP32 and 128 on Windows/Linux, except when using PyPy, where the default is 256.
 
- 
-The Windows executable is just the micropython runtime with the micropython code frozen and autolaunching. It is compatible with [cutechess](https://cutechess.com/), [arena](http://www.playwitharena.de/) and [lucaschess](https://lucaschess.pythonanywhere.com/) and it is only around 600KB.
+
+# Windows version
+
+The Windows executable is just the micropython runtime with the micropython code frozen and autolaunching the UCI interface using [my fork of MicroPython](https://github.com/fizban99/micropython_windows). It is compatible with [cutechess](https://cutechess.com/), [arena](http://www.playwitharena.de/) and [lucaschess](https://lucaschess.pythonanywhere.com/) and it is only around 600KB.
 You can also play on lichess at [level 0](https://lichess.org/@/uSunfish-l0), [level 1](https://lichess.org/@/uSunfish-l1) or [level 7](https://lichess.org/@/uSunfish-l7).
 
-There is also a pypy bundled version, around 250 ELO higher.
+There is also a bundled PyPy version, which is around 250 Elo stronger. It includes an .exe launcher that starts the UCI interface using the bundled abridged PyPy package.
