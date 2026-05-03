@@ -8,7 +8,7 @@ try:import micropython;runtime=' - micropython'
 except ImportError:
 	def const(x):return x
 	runtime=' - python'
-version='uSunfish 1.0'
+version='uSunfish 1.0a'
 year='2026'
 _MT_LW=const(12680)
 _OP_IND=const(1)
@@ -48,7 +48,7 @@ while True:
 	line=line.strip()
 	if not line:continue
 	args=line.split()
-	if args[0]=='uci':send('id name',version+f" ({platform}{runtime})");send('id author',f"fizban99 ({year})");send(f"option name Skill Level type spin default {LEVEL} min 0 max 7");send('option name OwnBook type check default true');send(f"option name UCI_LimitStrength type check default {limit_strength}");send(f"option name Hash Slots type combo default {u.T_SLOTS} var 2 var 4 var 8 var 16 var 32 var 64 var 128 var 256 var 512 var 1024");send('uciok')
+	if args[0]=='uci':send('id name',version+f" ({platform}{runtime})");send('id author',f"fizban99 ({year})");send(f"option name Skill Level type spin default {LEVEL} min 0 max 7");send('option name OwnBook type check default true');send(f"option name UCI_LimitStrength type check default {limit_strength}");send(f"option name Hash Slots type combo default {u.T_SLOTS} var 2 var 4 var 8 var 16 var 32 var 64 var 128 var 256 var 512");send('uciok')
 	elif args[0]=='isready':send('readyok')
 	elif args[0]=='quit':break
 	elif args[0:5]==['setoption','name','Skill','Level','value']:LEVEL=args[5].strip().lower()
@@ -75,7 +75,7 @@ while True:
 				elif u.eg:mtg=20
 				elif u.ply<20:mtg=50
 				else:mtg=40
-			inc=min(time_left//mtg+state[f"{turn}inc"]*8//10,time_left//4);max_time=start+inc*8//10;u.max_time=start+inc*13//10
+			inc=min(time_left//mtg+state[f"{turn}inc"]*8//10,time_left//4);max_time=start+inc*8//10;u.max_time=start+inc*15//10
 		for(depth,gamma,score,mv)in u.search(gmv):
 			if score>=gamma and mv:
 				best_move=render_mv(mv,wc_bc_ep_kp>>20);best_move_code=mv;hashfull=sum(u.t_szs)*1000//(u.T_SLOTS*_T_SZS);elapsed=max(1,monotonic()-start);send('info depth',depth,'score cp',score*100//_PAWN,'nodes',u.nodes,'nps',u.nodes*1000//elapsed,'hashfull',hashfull,'pv',best_move)
