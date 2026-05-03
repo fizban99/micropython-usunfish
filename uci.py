@@ -130,7 +130,7 @@ while True:
         send(f"option name Skill Level type spin default {LEVEL} min 0 max 7")
         send("option name OwnBook type check default true")
         send(f"option name UCI_LimitStrength type check default {limit_strength}")
-        send(f"option name Hash Slots type combo default {u.T_SLOTS} var 2 var 4 var 8 var 16 var 32 var 64 var 128 var 256 var 512 var 1024")
+        send(f"option name Hash Slots type combo default {u.T_SLOTS} var 2 var 4 var 8 var 16 var 32 var 64 var 128 var 256 var 512")
         send("uciok")
 
 
@@ -217,7 +217,7 @@ while True:
                     mtg = 40
             inc = min(time_left // mtg + state[f"{turn}inc"] * 8 // 10, time_left // 4)
             max_time = (start + inc * 8 // 10)
-            u.max_time =  (start +  inc *13 //10)
+            u.max_time =  (start +  inc *15 //10)
 
         for depth, gamma, score, mv in u.search(gmv):
 
