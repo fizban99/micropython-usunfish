@@ -194,8 +194,8 @@ def reset_pos(omv,sc,lwc_bc_ep_kp,dif,omb,h):
 @micropython.native
 def bound(pos,g,od,cn,omv,val,gm,ind,gmv,incheck,lmr,gm_buf,req_d,max_time):
 	global max_qs,nodes;board,ksq,wc_bc_ep_kp,sc,mob,h=pos;mqs=max_qs;osc=sc;omb=mob;oh=h;lwc_bc_ep_kp=wc_bc_ep_kp
-	if omv:dif=move(omv,val,pos);board,ksq,wc_bc_ep_kp,sc,mob,h=pos;q=board[omv&63]
-	else:dif=None;q=6|wc_bc_ep_kp>>20<<3
+	if omv:dif=move(omv,val,pos);board,ksq,wc_bc_ep_kp,sc,mob,h=pos
+	else:dif=None
 	mob=mob+2>>2;ret=0;best_mv=0;turn=wc_bc_ep_kp>>20
 	while True:
 		if makes_check(ksq>>8,0,pos,eg):ret,best=1,_MT_UP;break
@@ -224,7 +224,7 @@ def bound(pos,g,od,cn,omv,val,gm,ind,gmv,incheck,lmr,gm_buf,req_d,max_time):
 		best=-_MT_UP;ret=0;break
 	if not ret:
 		while True:
-			if not incheck and d>2 and cn and abs(sc)<125:
+			if not incheck and d>2 and cn and abs(sc)<90:
 				lwc=wc_bc_ep_kp;rotate(True);res=bound(pos,1-g,d-3,False,0,mb,gm,ind,gmv,incheck,0,gm_buf,req_d,max_time);rotate();res=-((res&65535)-16384);pos[2]=lwc;best=res if res>best else best
 				if res>=g:best_mv=0;break
 				if not match:mob=pos[4]+2>>2
@@ -235,21 +235,22 @@ def bound(pos,g,od,cn,omv,val,gm,ind,gmv,incheck,lmr,gm_buf,req_d,max_time):
 			if not hmove and d>2:hmove=bound(pos,g,d-2,False,0,0,gm,ind,gmv,incheck,0,gm_buf,req_d,max_time);hmove=hmove>>16
 			val_lower=_QS-(d+(int(incheck>0)<<2))*_QS_A
 			if val_lower>=_QS and od<-5 and not incheck:val_lower+=1
-			if lmr and not incheck:max_qs=max_qs-1
 			if hmove!=0:
 				p=board[hmove>>8];t=p&7 if not eg or op_mode else PSTMAP[p&7];val=value(pst,hmove>>8,hmove&63,((hmove&255)>>6)+1,p,board[hmove&63],(wc_bc_ep_kp>>20)*7,eg,kp,wc_bc_ep_kp>>8&255,t)
 				if val>=val_lower:
 					res=bound(pos,1-g,od-1,True,hmove,val+mb,gm,ind,None,incheck,0,gm_buf,req_d,max_time);res=-((res&65535)-16384);best=res if res>best else best
 					if res>=g:best_mv=hmove;break
-					if match>0 and(incheck&5 or res>hbest+3):match=0
+					if incheck&5 or match>0 and res>hbest+4:match=0
 				else:match=0
 			else:match=0
 			if gmv:gm=[m for m in gmv if((m&16777215)>>14)-512>=val_lower];l=len(gm);gm_buf[:l]=gm;gm=gm_buf
 			else:l=gen_moves(gm,ind,pos,val_lower,g_kll(pdpth),lmr,h_va[turn],max_h_mv[turn],h_mv[turn],eg,op_mode)
 			if omv==0:omb=pos[4];mb=1
 			else:mb=(pos[4]+2>>2)-mob+1
-			val=((gm[ind+l-1]&16777215)>>14)-512
-			if not incheck and(q==14 or q==6)and d>0 and pdpth>2 and(sc+mb+val+_QS*d*5<g or sc+mb+val-_QS*d*5>=g):res=sc+val+mb;best=res if res>best else best;break
+			val=((gm[ind+l-1]&16777215)>>14)-512;mvv=gm[ind+l-1]&16383;j=mvv&63;i=mvv>>8
+			if j>8 or board[i]!=_P:
+				q=board[j];res=sc+mb+val
+				if not incheck and q&7==6 and d>0 and d<7 and pdpth>2 and abs(res)<90 and(res+_QS*d*5<g or res-_QS*d*5>=g):best_mv=mvv;best=res if res>best else best;break
 			lmax=l
 			while l:
 				l-=1;mvv=gm[ind+l]&16777215;val=(mvv>>14)-512;best_mv=mvv&16383
@@ -262,13 +263,14 @@ def bound(pos,g,od,cn,omv,val,gm,ind,gmv,incheck,lmr,gm_buf,req_d,max_time):
 					res=sc+val+mb;best=res if res>best else best
 					if best>=g:break
 				else:
-					if not lmr and not incheck&4 and(lmax-l>3 and pdpth>2):lmr=1
+					if not lmr and not incheck&4 and(lmax-l>4 and pdpth>3):lmr=1
+					elif incheck&5:lmr=0
 					res=bound(pos,1-g,od-1,True,best_mv,val+mb,gm,ind+l,None,incheck,lmr,gm_buf,req_d,max_time);res=-((res&65535)-16384);best=res if res>best else best
 					if best>=g:break
 			break
 		if best==-_MT_UP:best_mv=0;best=-_MT_LW if incheck&4 else 0
 		if best>=g and(od>=-16 and(best_mv!=0 or incheck&4)):s_tp(h,best_mv,best,pdpth,val,od,32768,pos[4]+2>>2,incheck)
-		if best<g and not best_mv and hmove and od>=-16 and fh:s_tp(h,hmove,best,pdpth,val,od,0,pos[4]+2>>2,incheck)
+		if best<g and not best_mv and fh and hmove and od>=-16:s_tp(h,hmove,best,pdpth,val,od,0,pos[4]+2>>2,incheck)
 		max_qs=mqs
 	reset_pos(omv,osc,lwc_bc_ep_kp,dif,omb,oh)
 	if best==_CANCEL:return _NCANCEL
