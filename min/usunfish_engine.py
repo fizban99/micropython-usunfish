@@ -269,7 +269,7 @@ def bound(pos,g,od,cn,omv,val,gm,ind,gmv,incheck,lmr,gm_buf,req_d,max_time):
 					if best>=g:break
 			break
 		if best==-_MT_UP:best_mv=0;best=-_MT_LW if incheck&4 else 0
-		if best>=g and(od>=-16 and best_mv!=0):s_tp(h,best_mv,best,pdpth,val,od,32768,pos[4]+2>>2,incheck)
+		if best>=g and(od>=-16 and(best_mv!=0 or incheck&4)):s_tp(h,best_mv,best,pdpth,val,od,32768,pos[4]+2>>2,incheck)
 		if best<g and not best_mv and fh and hmove and od>=-16:s_tp(h,hmove,best,pdpth,val,od,0,pos[4]+2>>2,incheck)
 		max_qs=mqs
 	reset_pos(omv,osc,lwc_bc_ep_kp,dif,omb,oh)

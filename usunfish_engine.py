@@ -664,7 +664,13 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
         while True:
             # First we try not moving at all. We only do this if there is at least one major
             # piece left on the board, since otherwise zugzwangs are too dangerous.
-            # For now we just solve this by not using null-move in unbalanced positions.
+            # FIXME: We also can't null move if we can capture the opponent king.
+            # Since if we do, we won't spot illegal moves that could lead to stalemate.
+            # For now we just solve this by not using null-move in very unbalanced positions.
+            # TODO: We could actually use null-move in QS as well. Not sure it would be very useful.
+            # But still.... We just have to move stand-pat to be before null-move.
+            # if depth > 2 and can_null and any(c in pos.board for c in "RBNQ"):
+            # if depth > 2 and can_null and any(c in pos.board for c in "RBNQ") and abs(pos.score) < 500:
             if not incheck and d > 2 and cn  and abs(sc) < 90:
                 lwc = wc_bc_ep_kp
                 rotate(True)
@@ -727,7 +733,6 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
                     if res>=g:
                         best_mv = hmove
                         break
-                    # if match > 0 and (incheck&5 or res > hbest+3):
                     if incheck&5 or (match > 0 and res > hbest+4):
                         # look at previous moves only if the new mobility is at least 4 points greater than the stored one
                         # (simple heuristic that seems to work)
@@ -755,9 +760,9 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
 
 
             # Reverse / Forward futility pruning (non-qsearch)
-            # Only when not in check and not in qsearch, not a capture or promotion and not too unbalanced
-            # If static score is already far above gamma and ply depth is above 2, accept it
-            # If static score is already far below gamma and ply depth is above 2, accept it 
+            # Only when not in check and not in qsearch
+            # If static score is already far above gamma and ply is above 2, accept it
+            # If static score is already far below gamma and ply is above 2, accept it 
             val = ((gm[ind+l-1] & 0x00FFFFFF) >> 14) - 512 
             mvv = gm[ind+l-1] & 0x3FFF
             j = mvv&63
@@ -847,12 +852,11 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
         # when the score is better than the gamma so that moves and scores can be stored in the
         # same table. Also when invalidating a previously fh move
         
-        if best >= g and (od >= -16 and best_mv != 0):
+        if best >= g and (od >= -16 and (best_mv != 0 or incheck&4)):
             s_tp(h, best_mv, best, pdpth, val, od, 0x8000, (pos[4]+2)>>2, incheck)
         if best < g and not best_mv and fh and hmove and ((od >= -16)) :
             s_tp(h, hmove, best, pdpth, val, od, 0, (pos[4]+2)>>2, incheck)
-
-
+ 
         # reset max_qs if modified
         max_qs = mqs
 
