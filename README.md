@@ -1,4 +1,6 @@
-![uSunfish Logo](./img/uSunfish_logo_256.png)
+<p align="center">
+  <img src="./img/uSunfish_logo_128.png" />
+</p>
 
 # micropython-uSunfish
 
