@@ -117,8 +117,8 @@ while True:
 		gmv=u.g_mv();gm=[A&16383 for A in gmv];lvl=LEVEL if limit_strength else 100;lvl=int(lvl)-1;best=0;u.position[:]=hist[-1][:];u.max_nodes=125 if lvl<0 else 125*(1<<lvl)
 		if len(gmv)==1:best_move_code=gmv[0]&16383;best_move=render_mv(best_move_code,wc_bc_ep_kp>>20);send('bestmove',best_move);continue
 		time_left=state[f"{turn}time"]
-		if time_left is None:time_left=state['movetime']
-		if time_left is None or state['infinite']:u.max_time=None
+		if time_left is None:time_left=state['movetime'];max_time=start+time_left;u.max_time=start+time_left
+		elif time_left is None or state['infinite']:u.max_time=None
 		else:
 			mtg=state['movestogo']
 			if not mtg:

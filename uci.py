@@ -340,22 +340,25 @@ while True:
         time_left = state[f"{turn}time"]
         if time_left is None:
             time_left = state["movetime"]
-        if time_left is None or state["infinite"]:
-            u.max_time = None
-        else:
-            mtg = state["movestogo"]
-            if not mtg:
-                if time_left < 10000:
-                    mtg = 10
-                elif  u.eg:
-                    mtg = 20
-                elif u.ply < 20:
-                    mtg = 50
-                else:
-                    mtg = 40
-            inc = min(time_left // mtg + state[f"{turn}inc"] * 8 // 10, time_left // 4)
-            max_time = (start + inc * 8 // 10)
-            u.max_time =  (start +  inc *15 //10)
+            max_time = (start + time_left)
+            u.max_time =  (start + time_left)            
+        else:        
+            if time_left is None or state["infinite"]:
+                u.max_time = None
+            else:
+                mtg = state["movestogo"]
+                if not mtg:
+                    if time_left < 10000:
+                        mtg = 10
+                    elif  u.eg:
+                        mtg = 20
+                    elif u.ply < 20:
+                        mtg = 50
+                    else:
+                        mtg = 40
+                inc = min(time_left // mtg + state[f"{turn}inc"] * 8 // 10, time_left // 4)
+                max_time = (start + inc * 8 // 10)
+                u.max_time =  (start +  inc *15 //10)
 
         for depth, gamma, score, mv in u.search(gmv):
 
