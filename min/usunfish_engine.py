@@ -37,9 +37,11 @@ _CANCEL=const(16384)
 _NCANCEL=const(0)
 _QS=const(16)
 _QS_A=const(37)
+_FUT=const(10)
 _EVAL_ROUGHNESS=const(4)
 _MAX_DEPTH=const(15)
 _MAX_QS=const(8)
+PVALUES=b'\x00\x03\x03\x05\t'
 max_qs=_MAX_QS
 max_nodes=8000
 max_time=None
@@ -108,7 +110,7 @@ def move(mv,val,pos):
 	else:ii,jj,pc=i,j,p
 	wc,bc,ep,kp=wc_bc_ep_kp>>18&3,wc_bc_ep_kp>>16&3,wc_bc_ep_kp>>8&255,wc_bc_ep_kp&255;q=board[j]
 	if q&7<6:h^=hash_piece(q^pxor,jj)
-	pp=p&7;t=pp if not eg or op_mode else PSTMAP[pp];val=value(pst,i,j,prom,p,q,xor,eg,kp,ep,t)if val is None else val;ep,kp=128,128;score=pscore+val;dif=board[i]<<4|board[j];board[j]=p;board[i]=6|turn<<3;h^=hash_piece(pc,ii);wc=wc&1 if i==_A1 else wc&2 if i==_H1 else wc;bc=bc&2 if j==_A8 else bc&1 if j==_H8 else bc
+	pp=p&7;t=pp if not eg or op_mode else pp+6;val=value(pst,i,j,prom,p,q,xor,eg,kp,ep,t)if val is None else val;ep,kp=128,128;score=pscore+val;dif=board[i]<<4|board[j];board[j]=p;board[i]=6|turn<<3;h^=hash_piece(pc,ii);wc=wc&1 if i==_A1 else wc&2 if i==_H1 else wc;bc=bc&2 if j==_A8 else bc&1 if j==_H8 else bc
 	if p==_K:
 		wc=0;h^=hash_piece(pc,jj)
 		if abs(j-i)==2:kp=(i+j)//2;k=_A1 if j<i else _H1;dif=k<<16|kp<<8|dif;board[k]=6|turn<<3;h^=hash_piece(_R^pxor,63^k if turn else k);board[kp]=_R;h^=hash_piece(_R^pxor,63^kp if turn else kp)
@@ -192,21 +194,21 @@ def reset_pos(omv,sc,lwc_bc_ep_kp,dif,omb,h):
 	if not omv:return
 	reverse();restore(omv,dif)
 @micropython.native
-def bound(pos,g,od,cn,omv,val,gm,ind,gmv,incheck,lmr,gm_buf,req_d,max_time):
-	global max_qs,nodes;board,ksq,wc_bc_ep_kp,sc,mob,h=pos;mqs=max_qs;osc=sc;omb=mob;oh=h;lwc_bc_ep_kp=wc_bc_ep_kp
+def bound(pos,g,od,cn,omv,val,gm,ind,gmv,incheck,pdpth,gm_buf,req_d,max_time):
+	global max_qs,nodes;board,ksq,wc_bc_ep_kp,sc,mob,h=pos;mqs=max_qs;lmr=0;osc=sc;omb=mob;oh=h;lwc_bc_ep_kp=wc_bc_ep_kp
 	if omv:dif=move(omv,val,pos);board,ksq,wc_bc_ep_kp,sc,mob,h=pos
 	else:dif=None
 	mob=mob+2>>2;ret=0;best_mv=0;turn=wc_bc_ep_kp>>20
 	while True:
-		if makes_check(ksq>>8,0,pos,eg):ret,best=1,_MT_UP;break
+		if makes_check(ksq>>8,0,pos):ret,best=1,_MT_UP;break
 		kp=wc_bc_ep_kp&255
 		if kp!=128:
 			for i in range(-1,2):
-				if makes_check(kp+i,0,pos,eg):ret,best=1,_MT_UP;break
+				if makes_check(kp+i,0,pos):ret,best=1,_MT_UP;break
 			if ret:break
 		nodes+=1
 		if 10*nodes>15*max_nodes or max_time and monotonic()-max_time>0:ret,best=1,_CANCEL;break
-		entry=None;pdpth=req_d-od;hmove,e,fh,match,ret=g_sc(h,pdpth,od,board)
+		entry=None;hmove,e,fh,match,ret=g_sc(h,pdpth,od,board)
 		if fh:
 			if e>=g:ret,best,best_mv=1,e,hmove;break
 			elif match>0:hbest=e;best=e
@@ -219,38 +221,34 @@ def bound(pos,g,od,cn,omv,val,gm,ind,gmv,incheck,lmr,gm_buf,req_d,max_time):
 		if cn and d>0 and h in history:ret,best=1,0;break
 		incheck=incheck>>1
 		if match:incheck=ret|incheck
-		else:incheck=incheck|4 if makes_check(ksq&255,8,pos,eg)else incheck
+		elif makes_check(ksq&255,8,pos):incheck=incheck|4
 		if od<-mqs and not incheck&4:ret,best=1,sc+mb;break
 		best=-_MT_UP;ret=0;break
 	if not ret:
 		while True:
-			if not incheck and d>2 and cn and abs(sc)<90:
-				lwc=wc_bc_ep_kp;rotate(True);res=bound(pos,1-g,d-3,False,0,mb,gm,ind,gmv,incheck,0,gm_buf,req_d,max_time);rotate();res=-((res&65535)-16384);pos[2]=lwc;best=res if res>best else best
+			if not incheck and d>2 and cn and abs(sc)<125 and any(c in board for c in b'\x01\x02\x03\x04'):
+				lwc=wc_bc_ep_kp;rotate(True);res=bound(pos,1-g,d-3,False,0,mb,gm,ind,gmv,incheck,pdpth+1,gm_buf,req_d,max_time);rotate();res=-((res&65535)-16384);pos[2]=lwc;best=res if res>best else best
 				if res>=g:best_mv=0;break
 				if not match:mob=pos[4]+2>>2
 			if(incheck&4 or req_d==1)and mqs<2*_MAX_QS:max_qs+=1
 			if d==0 and not incheck&4:
 				best=sc+mb if sc+mb>best else best
 				if sc+mb>=g:best_mv=0;break
-			if not hmove and d>2:hmove=bound(pos,g,d-2,False,0,0,gm,ind,gmv,incheck,0,gm_buf,req_d,max_time);hmove=hmove>>16
+			if not hmove and d>2:hmove=bound(pos,g,d-2,False,0,0,gm,ind,gmv,incheck,pdpth,gm_buf,req_d,max_time);hmove=hmove>>16
 			val_lower=_QS-(d+(int(incheck>0)<<2))*_QS_A
-			if val_lower>=_QS and od<-5 and not incheck:val_lower+=1
+			if incheck&4:lmr=-1
 			if hmove!=0:
-				p=board[hmove>>8];t=p&7 if not eg or op_mode else PSTMAP[p&7];val=value(pst,hmove>>8,hmove&63,((hmove&255)>>6)+1,p,board[hmove&63],(wc_bc_ep_kp>>20)*7,eg,kp,wc_bc_ep_kp>>8&255,t)
+				p=board[hmove>>8];t=p&7 if not eg or op_mode else(p&7)+6;val=value(pst,hmove>>8,hmove&63,((hmove&255)>>6)+1,p,board[hmove&63],(wc_bc_ep_kp>>20)*7,eg,kp,wc_bc_ep_kp>>8&255,t)
 				if val>=val_lower:
-					res=bound(pos,1-g,od-1,True,hmove,val+mb,gm,ind,None,incheck,0,gm_buf,req_d,max_time);res=-((res&65535)-16384);best=res if res>best else best
+					res=bound(pos,1-g,od-1-lmr,True,hmove,val+mb,gm,ind,None,incheck,pdpth+1,gm_buf,req_d,max_time);res=-((res&65535)-16384);best=res if res>best else best
 					if res>=g:best_mv=hmove;break
-					if incheck&5 or match>0 and res>hbest+4:match=0
+					if incheck&4 or match>0 and res>hbest+4:match=0
 				else:match=0
 			else:match=0
 			if gmv:gm=[m for m in gmv if((m&16777215)>>14)-512>=val_lower];l=len(gm);gm_buf[:l]=gm;gm=gm_buf
-			else:l=gen_moves(gm,ind,pos,val_lower,g_kll(pdpth),lmr,h_va[turn],max_h_mv[turn],h_mv[turn],eg,op_mode)
+			else:l=gen_moves(gm,ind,pos,val_lower,g_kll(pdpth),h_va[turn],max_h_mv[turn],h_mv[turn],eg,op_mode)
 			if omv==0:omb=pos[4];mb=1
 			else:mb=(pos[4]+2>>2)-mob+1
-			val=((gm[ind+l-1]&16777215)>>14)-512;mvv=gm[ind+l-1]&16383;j=mvv&63;i=mvv>>8
-			if j>8 or board[i]!=_P:
-				q=board[j];res=sc+mb+val
-				if not incheck and q&7==6 and d>0 and d<7 and pdpth>2 and abs(res)<90 and(res+_QS*d*5<g or res-_QS*d*5>=g):best_mv=mvv;best=res if res>best else best;break
 			lmax=l
 			while l:
 				l-=1;mvv=gm[ind+l]&16777215;val=(mvv>>14)-512;best_mv=mvv&16383
@@ -258,18 +256,16 @@ def bound(pos,g,od,cn,omv,val,gm,ind,gmv,incheck,lmr,gm_buf,req_d,max_time):
 					if ohmove!=best_mv:continue
 					else:match=0
 				if best_mv==hmove:continue
-				if od<0 and sc+val+mb+(abs(val)+abs(mb))<g:res=sc+val+mb;best=res if res>best else best;break
-				if od<=-max_qs:
-					res=sc+val+mb;best=res if res>best else best
-					if best>=g:break
-				else:
-					if not lmr and not incheck&4 and(lmax-l>4 and pdpth>3):lmr=1
-					elif incheck&5:lmr=0
-					res=bound(pos,1-g,od-1,True,best_mv,val+mb,gm,ind+l,None,incheck,lmr,gm_buf,req_d,max_time);res=-((res&65535)-16384);best=res if res>best else best
-					if best>=g:break
+				res=sc+val+mb
+				if od<0 and res+abs(val)<g or od<=-max_qs:best=res if res>best else best;break
+				j=best_mv&63;i=best_mv>>8
+				if(j>7 or board[i]!=_P)and board[j]&7==6 and(not incheck&4 and d>2 and d<7 and pdpth>2 and res+(abs(val)+_FUT)<g):best=res if res>best else best;break
+				if not lmr and not incheck&4 and(lmax-l>4 and d>3 and pdpth>2):lmr=2
+				res=bound(pos,1-g,od-1-lmr,True,best_mv,val+mb,gm,ind+l,None,incheck,pdpth+1,gm_buf,req_d,max_time);res=-((res&65535)-16384);best=res if res>best else best
+				if best>=g:break
 			break
 		if best==-_MT_UP:best_mv=0;best=-_MT_LW if incheck&4 else 0
-		if best>=g and(od>=-16 and(best_mv!=0 or incheck&4)):s_tp(h,best_mv,best,pdpth,val,od,32768,pos[4]+2>>2,incheck)
+		if best>=g and(od>=-16 and best_mv!=0):s_tp(h,best_mv,best,pdpth,val,od,32768,pos[4]+2>>2,incheck)
 		if best<g and not best_mv and fh and hmove and od>=-16:s_tp(h,hmove,best,pdpth,val,od,0,pos[4]+2>>2,incheck)
 		max_qs=mqs
 	reset_pos(omv,osc,lwc_bc_ep_kp,dif,omb,oh)
@@ -310,17 +306,23 @@ def search(gmv):
 			if score>=g:lower=score
 			else:upper=score
 			eval_dist=upper-lower;yield(req_d,g,score,best_mv);g=(lower+upper+1)//2;iter=(iter+1)%64
-def g_m():turn=position[2]>>20;gm=gm_buf;l=gen_moves(gm,0,position,-_MT_LW,0,0,h_va[turn],max_h_mv[turn],h_mv[turn],eg,op_mode);gm=gm[:l];return gm
+def g_m():turn=position[2]>>20;gm=gm_buf;l=gen_moves(gm,0,position,-_MT_LW,0,h_va[turn],max_h_mv[turn],h_mv[turn],eg,op_mode);gm=gm[:l];return gm
+@micropython.native
+def is_endgame(board):material=sum(PVALUES[p&7]for p in board if p&7<5);pawns=sum(1 for p in board if p&7==0);return material<13 or pawns<8
+@micropython.native
+def recalc_sc(board,eg):
+	score=0
+	for(i,c)in enumerate(board):
+		piece=c&7
+		if piece>=6:continue
+		table=piece+6 if eg else piece
+		if c&8:score-=pst[table][i^56]
+		else:score+=pst[table][i]
+	return score
 @micropython.native
 def g_mv():
-	global max_qs,eg,pst;global t_szs,max_d_sc;global max_h_mv;pos=position;lbrd,_,wc_bc_ep_kp,pscore,_,_=pos;turn=wc_bc_ep_kp>>20;pvalues=b'\x00\x03\x03\x05\t'
-	if not eg and(sum(pvalues[p&7]for p in lbrd if p&7<5)<13 or sum(1 for p in lbrd if p&7==0)<8):
-		max_qs=_MAX_QS+1;eg=1;xor=(wc_bc_ep_kp>>20)*7;pscore=0
-		for(i,c)in enumerate(lbrd):
-			pp=c&7;t=PSTMAP[pp]
-			if pp<6 and c&8==0:pscore+=pst[t][i^xor]
-			elif pp<6:pscore-=pst[t][i^56^xor]
-		pos[3]=pscore
+	global max_qs,eg,pst;global t_szs,max_d_sc;global max_h_mv;pos=position;lbrd,_,wc_bc_ep_kp,pscore,_,_=pos;turn=wc_bc_ep_kp>>20
+	if not eg and is_endgame(lbrd):max_qs=_MAX_QS+1;eg=1;xor=(wc_bc_ep_kp>>20)*7;pos[3]=recalc_sc(lbrd,eg)
 	ts=[0]*T_SLOTS;d=0
 	if ply<2:
 		max_h_mv[0],max_h_mv[1]=0,0
@@ -352,12 +354,12 @@ def can_kill_king(mv,ccheck=True):
 	lbrd,ksq,wc_bc_ep_kp,pscore,_,_=position
 	if by_black:king=ksq&255
 	else:king=ksq>>8
-	if makes_check(king,by_black,pos,eg):res=True
+	if makes_check(king,by_black,pos):res=True
 	elif ccheck and mv:
 		kp=wc_bc_ep_kp&255
 		if kp!=128:
 			for i in(-1,0,1):
-				if makes_check(kp+i,by_black,pos,eg):res=True;break
+				if makes_check(kp+i,by_black,pos):res=True;break
 	if mv>0:reset_pos(mv,sc,lwc_bc_ep_kp,dif,mob,h)
 	return res
 def render(i):rank,fil=divmod(i-_A1,8);return chr(fil+ord('a'))+str(-rank+1)

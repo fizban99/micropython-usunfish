@@ -1,4 +1,4 @@
-![uSunfish Logo](./img/uSunfish_logo_128.png)
+![uSunfish Logo](./img/uSunfish_logo_256.png)
 
 # micropython-uSunfish
 
@@ -29,7 +29,7 @@ This fork has the following enhancements:
         - History heuristic third
         - Under promotions and non-history quiets last
     - Basic Late Move Reduction (LMR) 
-    - Agressive forward and reverse futility pruning.
+    - Agressive futility pruning.
     - Check extensions
 - The pst and mobility tables have been tuned using the quiet-labeled.v7.epd positions file using the L-BFGS-B algorithm of the scipy library.
 - Instead of a string, the board is a 64-item list that is part of the global position. Although a list to store the board is memory-hungry, its updatable and faster for restoring the difference when returning from a recursive call.
@@ -216,12 +216,17 @@ The format of the `bytes` object is described above in "inverted play".
 The file uci.py implements a simple UCI interface that can be used with any UCI-compatible user interface. It currently supports the following options
 - `Skill_Level` only active if `UCI_LimitStrength` set to true.
 - `OwnBook`. Whether to use its internal opening book or not.
-- `Hash Slots`. Each slot requires approximately 1500 bytes. The default is 8 on ESP32 and 128 on Windows/Linux, except when using PyPy, where the default is 256.
+- `Hash Slots`. Each slot requires approximately 1500 bytes. The default is 8 on ESP32 and 128 on Windows/Linux MicroPython, and 256 when using PyPy.
 
+The uci commands implemented are basically `position startpos [moves]`, `position fen`, `go perft <n>` and `go [wtime] [btime] [winc] [binc] [movetime]`
 
 # Windows version
 
-The Windows executable is just the micropython runtime with the micropython code frozen and autolaunching the UCI interface using [my fork of MicroPython](https://github.com/fizban99/micropython_windows/tree/windows-msvc-native-v128). It is compatible with [cutechess](https://cutechess.com/), [arena](http://www.playwitharena.de/) and [lucaschess](https://lucaschess.pythonanywhere.com/) and it is only around 600KB.
+The Windows executable is just the micropython runtime with the micropython code frozen and autolaunching the UCI interface using [my fork of MicroPython](https://github.com/fizban99/micropython_windows/tree/windows-msvc-native-v128). It is compatible with [cutechess](https://cutechess.com/), [arena](http://www.playwitharena.de/) and [lucaschess](https://lucaschess.pythonanywhere.com/) and it is only around 900KB.
 You can also play on lichess at [level 0](https://lichess.org/@/uSunfish-l0), [level 1](https://lichess.org/@/uSunfish-l1) or [level 7](https://lichess.org/@/uSunfish-l7).
 
-There is also a bundled PyPy version, which is around 200 Elo stronger. It includes an .exe launcher that starts the UCI interface using the bundled abridged PyPy package. While the MicroPython version uses around 2.6MB of memory, the pypy version uses around 50MB. The original Sunfish, on the other hand, had no limits for the hash table and it could easily reach several gigabytes.
+Besides the MicroPython version, the release includes an `.exe` launcher that starts the UCI interface using the bundled, abridged PyPy package. The MicroPython version uses about **2.6 MB** of memory, while the PyPy version uses about **50 MB**. By comparison, the original Sunfish did not impose a fixed hash-table limit and could easily grow to several gigabytes of memory usage.
+
+Based on my own CCRL-like testing, I estimate the MicroPython version to be around **1320 Elo** on the [CCRL Blitz](https://computerchess.org.uk/404/) scale. The PyPy version is estimated to be about **200 Elo stronger**, at approximately **1520 Elo**.
+
+If confirmed by independent testing, this would make it one of the strongest chess engines written in Python, and very likely the strongest written in MicroPython.

@@ -8,7 +8,7 @@ try:import micropython;runtime=' - micropython'
 except ImportError:
 	def const(x):return x
 	runtime=' - python'
-version='uSunfish 1.0a'
+version='uSunfish 1.1'
 year='2026'
 _MT_LW=const(12680)
 _OP_IND=const(1)
@@ -19,7 +19,52 @@ limit_strength=False
 for arg in sys.argv[1:]:
 	if arg.startswith('--level='):LEVEL=int(arg.split('=',1)[1]);limit_strength=True
 startpos=u.position[:]
-startpos[0]=u.position[0][:]
+startpos[0]=startpos[0][:]
+_P=0
+_N=1
+_B=2
+_R=3
+_Q=4
+_K=5
+PIECES='PNBRQK.pnbrqk'
+VALUES=[_P,_N,_B,_R,_Q,_K,6,_P|8,_N|8,_B|8,_R|8,_Q|8,_K|8]
+ENCODE={A:B for(A,B)in zip(PIECES,VALUES)}
+PVALUES=b'\x00\x03\x03\x05\t'
+def encode_fen_board(fen_board):
+	B=[]
+	for A in fen_board:
+		if A=='/':continue
+		elif A.isdigit():B.extend([6]*int(A))
+		else:B.append(ENCODE[A])
+	return B
+def castle_bits(castling):A=castling;B=('Q'in A)<<1|('K'in A);C=('k'in A)<<1|('q'in A);return B<<2|C
+def from_fen(board,color,castling,enpas):
+	B=enpas;A=board;A=encode_fen_board(A);D=u.parse(B)if B!='-'else 128;E=castle_bits(castling)<<16|D<<8|128;C=u.is_endgame(A);u.eg=C;F=u.recalc_sc(A,C);G=A.index(_K|8)<<8|A.index(_K);u.position=[A,G,E,F,0,0]
+	if color!='w':u.rotate()
+	u.hash_board();return u.position
+def cp_pos(position):A=position[:];A[0]=A[0][:];return A
+def can_kill_king(position):
+	A=position;C,D=A[1:3];u.position=A
+	if u.makes_check(C>>8,0,A):return True
+	B=D&255
+	if B==128:return False
+	return any(u.makes_check(B+C,0,A)for C in(-1,0,1))
+def perft(depth):
+	B=cp_pos(u.position)
+	def C(position):u.position=cp_pos(position);u.hash_board()
+	def E(position,depth):
+		D=depth;B=position
+		if can_kill_king(B):return 0
+		if D==0:return 1
+		F=0;G=cp_pos(B);H=u.g_m()
+		for A in H:I=(A>>14)-512;A=A&16383;u.move(A,I,u.position);F+=E(u.position,D-1);C(G)
+		return F
+	F=0;C(B);G=u.g_m()
+	for A in G:
+		H=(A>>14)-512;A=A&16383;I=render_mv(A,B[2]>>20);u.move(A,H,u.position);D=E(u.position,depth-1)
+		if D:print(f"{I}: {D}");F+=D
+		C(B)
+	print();print('Nodes searched:',F)
 def parse_go(args):
 	C=args;B={'wtime':None,'btime':None,'winc':0,'binc':0,'movestogo':None,'depth':None,'nodes':None,'mate':None,'movetime':None,'infinite':False};A=1;E=len(C)
 	while A<E:
@@ -60,6 +105,11 @@ while True:
 	elif args[:2]==['position','startpos']:
 		hist=[startpos];reset_pos()
 		for mv in args[3:]:move_code=parse_move(mv,1-(u.position[2]>>20));u.mk_mv(move_code);hist.append((u.position[0][:],u.position[1],u.position[2],u.position[3],u.position[4],u.position[5]))
+	elif args[:2]==['position','fen']:
+		u.op_mode=0;u.eg=0;u.max_qs=_MAX_QS;u.max_h_mv=[0,0];u.position=from_fen(*args[2:6]);u.ply=1
+		if u.position[2]>>20==0:hist=[cp_pos(u.position)]
+		else:old_pos=cp_pos(u.position);u.rotate();hist=[cp_pos(u.position),old_pos];u.position=cp_pos(old_pos)
+	elif args[:2]==['go','perft']:perft(int(args[2]))
 	elif args[0]=='go'or args[0]=='bench':
 		if u.ply==0:hist=[startpos];reset_pos()
 		state=parse_go(args);start=monotonic();move_str=None;best_move=0;best_move_code=0;board,pscore,wc_bc_ep_kp,ksq,mob,h=hist[-1];turn='b'if wc_bc_ep_kp>>20 else'w';board=board[:]
@@ -67,6 +117,7 @@ while True:
 		gmv=u.g_mv();gm=[A&16383 for A in gmv];lvl=LEVEL if limit_strength else 100;lvl=int(lvl)-1;best=0;u.position[:]=hist[-1][:];u.max_nodes=125 if lvl<0 else 125*(1<<lvl)
 		if len(gmv)==1:best_move_code=gmv[0]&16383;best_move=render_mv(best_move_code,wc_bc_ep_kp>>20);send('bestmove',best_move);continue
 		time_left=state[f"{turn}time"]
+		if time_left is None:time_left=state['movetime']
 		if time_left is None or state['infinite']:u.max_time=None
 		else:
 			mtg=state['movestogo']

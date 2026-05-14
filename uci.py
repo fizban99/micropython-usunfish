@@ -13,7 +13,7 @@ except ImportError:
         return x
     runtime = " - python"
 
-version = "uSunfish 1.0a" 
+version = "uSunfish 1.1" 
 year = "2026"
 _MT_LW = const(12680)
 _OP_IND = const(1)
@@ -29,7 +29,124 @@ for arg in sys.argv[1:]:
 
 
 startpos = u.position[:]
-startpos[0] = u.position[0][:]
+startpos[0] = startpos[0][:]
+
+_P = 0
+_N = 1
+_B = 2
+_R = 3
+_Q = 4
+_K = 5
+PIECES = "PNBRQK.pnbrqk"
+VALUES = [_P, _N, _B, _R, _Q, _K, 6,
+          _P | 8, _N | 8, _B | 8, _R | 8, _Q | 8, _K | 8]
+
+ENCODE = {p: v for p, v in zip(PIECES, VALUES)}
+PVALUES = b"\x00\x03\x03\x05\x09"
+
+
+def encode_fen_board(fen_board):
+    board = []
+
+    for ch in fen_board:
+        if ch == "/":
+            continue
+        elif ch.isdigit():
+            board.extend([6] * int(ch))
+        else:
+            board.append(ENCODE[ch])
+
+    return board
+
+
+def castle_bits(castling):
+    wc = (("Q" in castling) << 1) | ("K" in castling)
+    bc = (("k" in castling) << 1) | ("q" in castling)
+    return (wc << 2) | bc
+
+
+def from_fen(board, color, castling, enpas):
+    board = encode_fen_board(board)
+
+    ep = u.parse(enpas) if enpas != "-" else 128
+    wc_bc_ep_kp = (castle_bits(castling) << 16) | (ep << 8) | 0x80
+
+    eg = u.is_endgame(board)
+    u.eg = eg
+
+    score = u.recalc_sc(board, eg)
+    ksq = (board.index(_K | 8) << 8) | board.index(_K)
+
+    u.position = [board, ksq, wc_bc_ep_kp, score, 0, 0]
+
+    if color != "w":
+        u.rotate()
+
+    u.hash_board()
+    return u.position
+
+
+
+def cp_pos(position):
+    copy = position[:]
+    copy[0]=copy[0][:]
+    return copy
+
+def can_kill_king(position):
+    # If we just checked for opponent moves capturing the king, we would miss
+    # captures in case of illegal castling.
+    ksq, wc_bc_ep_kp = position[1:3]
+    u.position = position
+    if u.makes_check(ksq>>8,  0x00, position ):
+        return True
+    kp = wc_bc_ep_kp & 0xFF
+    if kp == 128:
+        return False
+
+    return any(u.makes_check(kp + offset, 0x00, position) for offset in (-1, 0, 1))
+
+def perft(depth):
+    root_pos  = cp_pos(u.position)
+    def restore_position(position):
+        u.position = cp_pos(position)
+        u.hash_board()
+
+    def _perft_count(position, depth):
+        # Check that we didn't get to an illegal position
+        if can_kill_king(position):
+            return 0
+        if depth == 0:
+            return 1
+        total = 0
+        cp = cp_pos(position)
+
+        gm = u.g_m()
+        for move in gm:
+            val = (move>>14)-512
+            move = move&0x3FFF
+            u.move(move, val, u.position)
+            total += _perft_count(u.position, depth - 1)
+            restore_position(cp)
+
+        return total
+
+    total = 0
+    restore_position(root_pos)
+    gm = u.g_m() 
+    for move in gm:
+        val = (move>>14)-512
+        move = move&0x3FFF
+        move_uci = render_mv(move, root_pos[2]>>20)
+        u.move(move, val, u.position)
+        cnt = _perft_count(u.position, depth - 1)
+        if cnt:
+            print(f"{move_uci}: {cnt}")
+            total += cnt
+        restore_position(root_pos)
+
+    print()
+    print("Nodes searched:", total)
+
 
 
 def parse_go(args):
@@ -150,7 +267,7 @@ while True:
         limit_strength = True if args[4].lower() == "true" else False
 
     elif args[0:5] == ["setoption", "name", "Hash", "Slots", "value"]:
-        s = int(args[5])
+        s = int(args[5])    
         if 2 <= s <= 1024 and s & (s - 1) == 0:
             u.T_SLOTS = s
             recalc_tp()
@@ -165,6 +282,25 @@ while True:
             u.mk_mv(move_code)
             # print(u.position[5])
             hist.append((u.position[0][:], u.position[1], u.position[2], u.position[3], u.position[4], u.position[5]))
+
+    elif args[:2] == ["position", "fen"]:
+            u.op_mode = 0    
+            u.eg = 0
+            u.max_qs = _MAX_QS
+            u.max_h_mv=[0,0]
+            u.position = from_fen(*args[2:6])
+            u.ply=1
+            if u.position[2]>>20 == 0:
+                hist = [cp_pos(u.position)]  
+            else:
+                old_pos = cp_pos(u.position)
+                u.rotate()
+                hist = [cp_pos(u.position), old_pos]
+                u.position = cp_pos(old_pos)
+
+
+    elif args[:2] == ["go", "perft"]:
+        perft(int(args[2]))
 
     elif args[0] == "go" or args[0] == "bench":
         if u.ply == 0:
@@ -202,6 +338,8 @@ while True:
             continue
 
         time_left = state[f"{turn}time"]
+        if time_left is None:
+            time_left = state["movetime"]
         if time_left is None or state["infinite"]:
             u.max_time = None
         else:

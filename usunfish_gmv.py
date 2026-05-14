@@ -12,10 +12,7 @@ except ImportError:
     def const(x):
         return x
 
-b_overflow = 0
-vector_list = []
-# def const(x): return x
-###############################################################################
+##############################################################################
 # Global constants
 ###############################################################################
 # in micropython, const makes the variable a constant, saving memory
@@ -23,22 +20,22 @@ vector_list = []
 # https://docs.micropython.org/en/latest/develop/optimizations.html
 _BSHP_MG = const(20); _BSHP_EG = const(38); _OPNR_MG = const(-7); _OPNR_EG = const(1); _OPNQ_MG = const(6); _OPNQ_EG = const(2); _SOPNR_MG = const(-1); _SOPNR_EG = const(-5); _SOPNQ_MG = const(1); _SOPNQ_EG = const(0); _CTPA_MG = const(-24); _CTPA_EG = const(-8); _MXEPA_MG = const(4); _MXEPA_EG = const(6); _MXOPA_MG = const(-4); _MXOPA_EG = const(-4); _RRPA_MG = const(22); _RRPA_EG = const(7); _PB_MG = const(4); _PB_EG = const(3); _OPB_MG = const(-6); _OPB_EG = const(-6); _KRN_MG = const(6); _KRN_EG = const(1); _KRB_MG = const(4); _KRB_EG = const(1); _KRR_MG = const(-1); _KRR_EG = const(-1); _KRQ_MG = const(6); _KRQ_EG = const(3); _TEMPO = const(6); _PHLX_MG = const(8); _PHLX_EG = const(2); _PHPA_MG = const(28); _PHPA_EG = const(22); _PPPA_MG = const(16); _PPPA_EG = const(11); _KR1_MG = const(-6); _KR1_EG = const(-10); _KR2_MG = const(2); _KR2_EG = const(2); _KR3_MG = const(2); _KR3_EG = const(8); _KR4_MG = const(16); _KR4_EG = const(3); _SOPN2R_MG = const(4); _SOPN2R_EG = const(1); _SOPN2Q_MG = const(3); _SOPN2Q_EG = const(12); _OPN2R_MG = const(10); _OPN2R_EG = const(-10); _OPN2Q_MG = const(-10); _OPN2Q_EG = const(4)
 
-_A1 = const(56)
-_H1 = const(63)
-_A8 = const(0)
-_H8 = const(7)
+_A1 = 56
+_H1 = 63
+_A8 = 0
+_H8 = 7
 
-_NO = const(-8)
-_E = const(1)
-_S = const(8)
-_W = const(-1)
-_P = const(0)
-_N = const(1)
-_B = const(2)
-_R = const(3)
-_Q = const(4)
-_K = const(5)
-_BP = const(8)
+_NO = -8
+_E = 1
+_S = 8
+_W = -1
+_P = 0
+_N = 1
+_B = 2
+_R = 3
+_Q = 4
+_K = 5
+_BP = 8
 
 # In the original sunfish, mate value must be greater than 8*queen + 2*(rook+knight+bishop)
 # King value is set to twice this value such that if the opponent is
@@ -48,9 +45,12 @@ _BP = const(8)
 # we can use constants that are close to the original, but fit in 14 bits.
 # This will allow efficient usage of 30 bit positive integers in micropython
 # Constants for tuning search
-_QS = const(16)
+_QS = 16
 # limit depth for opening book
-_MAX_OP_D = const(11)
+_MAX_OP_D=const(11)
+
+
+buff = [0]*9 # kingring squares and black pawns
 
 def parse_sibl(c_ind, d, op):
     def op_get(i, op):
@@ -92,7 +92,7 @@ def parse_sibl(c_ind, d, op):
 # Chess logic
 ###############################################################################
 @micropython.native
-def makes_check(ksq, bbit, position, eg):
+def makes_check(ksq, bbit, position):
     """
     Return True if the square king_sq is attacked by the side 'by_white'.
     - by_white == True  -> look for white attackers
@@ -160,13 +160,11 @@ def makes_check(ksq, bbit, position, eg):
 
 
 @micropython.native
-def ma(moves, ind, mv, val, lvalue, kll, h_va, max_h_mv, h_mv, p, q, prom, lmr, empt):
+def ma(moves, ind, mv, val, lvalue, kll, h_va, max_h_mv, h_mv, p, q, prom, empt):
     """ Move sorting logic
         A virtual bonus is added to the score for sorting
         and later substracted for stability of the sunfish scoring logic
     """
-    # global l_max
-    global b_overflow
 
     if (val < lvalue or (lvalue >= _QS and prom < 3) ):
         # only add moves above the threshold
@@ -204,15 +202,9 @@ def ma(moves, ind, mv, val, lvalue, kll, h_va, max_h_mv, h_mv, p, q, prom, lmr, 
     else:
         order = 0
 
-    if not (lmr and order==0):
-        # our naive LMR just disregards low value moves not in history
-        if ind < len(moves):
-            moves[ind] = ((mv | ((val + 512) << 14)) | (order << 24))
-            ind += 1
-        else:
-            # assert False
-            b_overflow += 1
-            pass
+    if ind < len(moves):
+        moves[ind] = ((mv | ((val + 512) << 14)) | (order << 24))
+        ind += 1
    
     return ind
 
@@ -282,7 +274,7 @@ def rq_mobility(r_file, q_file, enemy_pawns, own_pawns, pf2, sop_r, sop_q, op_r,
     return m
 
 @micropython.native
-def gen_moves(gm, ind, pos, lvalue, kll, lmr, hva, mhva, hmv, eg, op_mode):
+def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode):
     """A state of a chess game contains:
     board -- a 64 integer list representation of the board  
     ksq_b_w -- the king square black and white
@@ -299,7 +291,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, lmr, hva, mhva, hmv, eg, op_mode):
     b, ksq, wcek, _ , _, _ = pos
     lpst = pst
     l = ind
-    lbuff=  [0]*9 # kingring squares and black pawns
+    lbuff= buff
     # unpack packed status 
     ep = (wcek >>8) & 0xFF  # en passant square
     kp = (wcek & 0xFF) # king passant square
@@ -321,23 +313,24 @@ def gen_moves(gm, ind, pos, lvalue, kll, lmr, hva, mhva, hmv, eg, op_mode):
     mob=[0,0]
     attc=[0,0]
     if eg:
-        att = (_KRN_EG, _KRB_EG, _KRR_EG, _KRQ_EG)
-        krc = (_KR1_EG, _KR2_EG, _KR3_EG, _KR4_EG)
+        att = [_KRN_EG, _KRB_EG, _KRR_EG, _KRQ_EG]
+        krc = [_KR1_EG, _KR2_EG, _KR3_EG, _KR4_EG]
         mbt = mbt_eg
-        sopn = (_SOPN2R_EG, _SOPN2Q_EG)
-        opn = (_OPN2R_EG, _OPN2Q_EG)
+        sopn = [_SOPN2R_EG, _SOPN2Q_EG]
+        opn = [_OPN2R_EG, _OPN2Q_EG]
     else:
-        att = (_KRN_MG, _KRB_MG, _KRR_MG, _KRQ_MG)
-        krc = (_KR1_MG, _KR2_MG, _KR3_MG, _KR4_MG)
+        att = [_KRN_MG, _KRB_MG, _KRR_MG, _KRQ_MG]
+        krc = [_KR1_MG, _KR2_MG, _KR3_MG, _KR4_MG]
         mbt = mbt_mg
-        sopn = (_SOPN2R_MG, _SOPN2Q_MG)
-        opn = (_OPN2R_MG, _OPN2Q_MG)
+        sopn = [_SOPN2R_MG, _SOPN2Q_MG]
+        opn = [_OPN2R_MG, _OPN2Q_MG]
     RQ_files = [0,0,0,0]
     P_files = [0,0]
 
 
     for p in b:
         i+=1
+
         if p==empt:       # Skip empty squares and opponent's pieces
             continue
         bbit = p&8 # is black piece
@@ -346,7 +339,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, lmr, hva, mhva, hmv, eg, op_mode):
         wb = 1 if bbit else 0 # white or black to index mobility
 
         fi = i & 7  # calculate file for detecting out of bounds        
-        t = pp if (not eg or op_mode) else PSTMAP[pp]        
+        t = pp if (not eg or op_mode) else pp+6
         ring = wk_ring if bbit else bk_ring  # squares around enemy king
         if pp==_P:
             r = i >> 3
@@ -424,9 +417,9 @@ def gen_moves(gm, ind, pos, lvalue, kll, lmr, hva, mhva, hmv, eg, op_mode):
                 # enemy king
                 if pp!=_P and pp!=_K:
                     if j in ring:
-                        if j != (wk if bbit else bk):
-                            mob[wb] += att[pp-1] + krc[attc[wb]]
-                            attc[wb] +=1 if attc[wb] <3 else 0
+                            if j != (wk if bbit else bk):
+                                mob[wb] += att[pp-1] + krc[attc[wb]]
+                                attc[wb] +=1 if attc[wb] <3 else 0
                                 
 
                 q = b[j] 
@@ -494,7 +487,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, lmr, hva, mhva, hmv, eg, op_mode):
                         for prom in range(1,5):  # NBRQ
                             v = value(lpst, i, j, prom, p, q, xor, eg, kp, ep, t)
                             ind = ma(gm, ind, (i << 8) | j | (
-                                (prom - 1) << 6), v, lvalue, kll, hva, mhva, hmv, p, q, prom-1, lmr, empt)
+                                (prom - 1) << 6), v, lvalue, kll, hva, mhva, hmv, p, q, prom-1, empt)
                         break
                 elif p == _BP:
                     if df:
@@ -513,7 +506,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, lmr, hva, mhva, hmv, eg, op_mode):
                 if not bbit:
                     v = value(lpst, i, j, 0, p, q, xor, eg, kp, ep, t)
                     ind = ma(gm, ind, (i << 8) | j, v, lvalue,
-                            kll, hva, mhva, hmv, p, q, 4, lmr, empt)
+                            kll, hva, mhva, hmv, p, q, 4, empt)
 
                 # stop crawlers (P,N,K) and after any capture
                 if ((qn^0x8) < 6 ) or pp == _P or pp==_K or pp==_N:
@@ -526,19 +519,19 @@ def gen_moves(gm, ind, pos, lvalue, kll, lmr, hva, mhva, hmv, eg, op_mode):
                 if i == _A1 and cwq and j < 63 and b[j + _E] == _K:
                     it = j + _E
                     jt = j + _W
-                    tt = _K if (not eg or op_mode) else PSTMAP[_K]   
+                    tt = _K if (not eg or op_mode) else _K+6
                     v = value(lpst, it, jt, 0, _K, 6, xor, eg, kp, ep, tt)
                     ind = ma(gm, ind, (it << 8) | jt, v, lvalue,
-                             kll, hva, mhva, hmv, p, q, 4, lmr, empt)
+                             kll, hva, mhva, hmv, p, q, 4, empt)
                     # break since we can't slide beyond the king
                     break
                 if i == _H1 and cke and j > 0 and b[j + _W] == _K:
                     it = j + _W
                     jt = j + _E
-                    tt = _K if (not eg or op_mode) else PSTMAP[_K]   
+                    tt = _K if (not eg or op_mode) else _K+6
                     v = value(lpst, it, jt, 0, _K, 6, xor, eg, kp, ep, tt)
                     ind = ma(gm, ind, (it << 8) | jt, v, lvalue,
-                             kll, hva, mhva, hmv, p, q, 4, lmr, empt)
+                             kll, hva, mhva, hmv, p, q, 4, empt)
                     # break since we can't slide beyond the king
                     break
     l = ind - l
@@ -593,6 +586,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, lmr, hva, mhva, hmv, eg, op_mode):
                 else:
                     mob[1] += _CTPA_MG + _MXEPA_MG* mxe *(r-2)+ _MXOPA_MG * mxo *(r-2)+ _RRPA_MG*(r-2) + _PHPA_MG * phlx + _PPPA_MG * ppawn # bonus for non blocked pawns
     # Store the mobility in the position list
-    # round it up with +2
-    pos[4] = (mob[0]-mob[1])
+    pos[4] = ((mob[0]-mob[1]))
     return l
+
+

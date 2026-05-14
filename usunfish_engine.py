@@ -64,10 +64,13 @@ _NCANCEL = const(0)
 # Constants for tuning search
 _QS = const(16)
 _QS_A = const(37)
+_FUT = const(10)
 _EVAL_ROUGHNESS = const(4)
 _MAX_DEPTH = const(15)
 # limit depth for quiescence search 
 _MAX_QS = const(8)
+PVALUES=b"\x00\x03\x03\x05\x09"
+
 max_qs = _MAX_QS
 max_nodes = 8000
 max_time = None
@@ -260,7 +263,7 @@ def move(mv, val, pos):
     if q&7<6:
         h ^= hash_piece(q^pxor, jj)   
     pp = p & 7
-    t = pp if (not eg or op_mode) else PSTMAP[pp] 
+    t = pp if (not eg or op_mode) else pp+6
     val = value(pst, i, j, prom, p, q, xor, eg, kp, ep, t) if val is None else (val)
     # reset ep and kp
     ep, kp = 128, 128
@@ -545,7 +548,7 @@ def reset_pos(omv, sc, lwc_bc_ep_kp, dif, omb, h):
     restore(omv, dif)
 
 @micropython.native
-def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, max_time):
+def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, pdpth, gm_buf, req_d, max_time):
     """ Receives a position, the gamma,depth,can_null, qs and returns the best score for the position
         Let s* be the "true" score of the sub-tree we are searching.
         The method returns r, where
@@ -554,6 +557,7 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
     global max_qs, nodes
     board, ksq, wc_bc_ep_kp, sc, mob, h = pos
     mqs = max_qs
+    lmr = 0
 
     # Make the move
     osc = sc # original score
@@ -580,14 +584,14 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
         # or able to capture the opponent king.
         # If the move ends with a king capture, we can stop the search
         # and return the mate score
-        if makes_check(ksq >> 8, 0, pos, eg):
+        if makes_check(ksq >> 8, 0, pos):
             ret, best = 1, _MT_UP
             break
         # king moved through check, return a mate score
         kp = wc_bc_ep_kp & 0xFF
         if kp != 128:
             for i in range(-1, 2):
-                if makes_check(kp+i,0, pos, eg):
+                if makes_check(kp+i,0, pos):
                     ret, best = 1, _MT_UP
                     break
             if ret:
@@ -601,8 +605,6 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
 
 
         entry = None
-        # Calculate the ply depth (distance from root)
-        pdpth = req_d - od
         # Look for the strongest move from last time, the hash-move.
         # and look in the table if we have already searched this position before.
         hmove, e, fh, match, ret = g_sc(h, pdpth, od, board)
@@ -626,9 +628,6 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
         else:
             mb = 1 # turn bonus
         # Depth <= 0 is QSearch. Here any position is searched as deeply as defined by _MAX_QS
-        # if lmr and not incheck:
-        #     d = od-2 if od-2 > 0 else 0
-        # else:
         d = od if od > 0 else 0
         # Let's not repeat positions. We don't check for repetitions:
         # - at the root (can_null=False) since it is in history, but not a draw.
@@ -645,10 +644,9 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
         # incheck&1: in my previous move I moved out of check
         incheck = incheck >> 1
         if match:
-             incheck = ret | incheck
-        else:
-            incheck = (incheck | 4) if makes_check(
-                    ksq & 0xFF, 0x08, pos, eg) else incheck
+            incheck = ret | incheck
+        elif makes_check(ksq & 0xFF, 0x08, pos):
+            incheck = incheck | 4
 
         # if we reached the maximum depth in quiescent search and not in check, return the score
         if (od < -mqs and not incheck&4):
@@ -671,11 +669,11 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
             # But still.... We just have to move stand-pat to be before null-move.
             # if depth > 2 and can_null and any(c in pos.board for c in "RBNQ"):
             # if depth > 2 and can_null and any(c in pos.board for c in "RBNQ") and abs(pos.score) < 500:
-            if not incheck and d > 2 and cn  and abs(sc) < 90:
+            if not incheck and d > 2 and cn and abs(sc) < 125 and any(c in board for c in b'\x01\x02\x03\x04') :
                 lwc = wc_bc_ep_kp
                 rotate(True)
                 res = bound(pos, 1-g, d-3 , False, 0, mb,
-                            gm, ind, gmv, incheck, 0, gm_buf, req_d, max_time)
+                            gm, ind, gmv, incheck, pdpth+1, gm_buf, req_d, max_time)
                 rotate()
                 res = -((res & 0xFFFF)-16384)                
                 pos[2] = lwc
@@ -703,7 +701,7 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
             # can_null=False, since we want to make sure we actually find a move.
             if not hmove and d > 2:
                 hmove = bound(pos, g, d - 2, False, 0, 0,
-                               gm, ind, gmv, incheck, 0, gm_buf, req_d, max_time)
+                               gm, ind, gmv, incheck, pdpth, gm_buf, req_d, max_time)
                 hmove = hmove >> 16
 
 
@@ -712,8 +710,10 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
             # promotions). Otherwise we do all moves. This is called quiescent search.
             # If in check or moving out of check, we increase the range.
             val_lower = (_QS - (d+(int(incheck > 0)<<2)) * _QS_A)
-            if val_lower >= _QS and od < -5 and not incheck:
-                val_lower += 1 
+
+            # Check extension
+            if incheck&4:
+                lmr = -1   
             # Only play the move if it would be included at the current val-limit,
             # since otherwise we'd get search instability.
             # We will skip the hash-move in the main loop below
@@ -721,19 +721,19 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
             # since the gamma is different
             if hmove != 0:
                 p = board[hmove >> 8]
-                t = (p&7) if (not eg or op_mode) else PSTMAP[p&7] 
+                t = (p&7) if (not eg or op_mode) else (p&7)+6
                 val = value(pst, hmove >> 8, hmove & 63, ((
                     hmove & 0xFF) >> 6)+1, p, board[hmove & 63], 
                     (wc_bc_ep_kp >> 20) * 7, eg, kp, (wc_bc_ep_kp>>8) & 0xFF,t)
                 if val >= val_lower:
-                    res = bound(pos, 1-g, od-1, True, hmove,
-                                val+mb, gm, ind, None, incheck, 0, gm_buf, req_d, max_time)
+                    res = bound(pos, 1-g, od-1-lmr, True, hmove,
+                                val+mb, gm, ind, None, incheck, pdpth+1, gm_buf, req_d, max_time)
                     res = -((res & 0xFFFF)-16384)
                     best = res if res > best else best
                     if res>=g:
                         best_mv = hmove
                         break
-                    if incheck&5 or (match > 0 and res > hbest+4):
+                    if incheck&4 or (match > 0 and res > hbest+4):
                         # look at previous moves only if the new mobility is at least 4 points greater than the stored one
                         # (simple heuristic that seems to work)
                         match = 0
@@ -750,7 +750,7 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
                 gm_buf[:l] = gm
                 gm = gm_buf
             else:
-                l = gen_moves(gm, ind, pos, val_lower, g_kll(pdpth), lmr, h_va[turn], max_h_mv[turn], h_mv[turn], eg, op_mode)
+                l = gen_moves(gm, ind, pos, val_lower, g_kll(pdpth), h_va[turn], max_h_mv[turn], h_mv[turn], eg, op_mode)
             if omv == 0:
                 omb = pos[4]
                 mb = 1
@@ -758,23 +758,6 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
                 mb = (((pos[4]+2)>>2)-mob+1)
                 
 
-
-            # Reverse / Forward futility pruning (non-qsearch)
-            # Only when not in check and not in qsearch
-            # If static score is already far above gamma and ply is above 2, accept it
-            # If static score is already far below gamma and ply is above 2, accept it 
-            val = ((gm[ind+l-1] & 0x00FFFFFF) >> 14) - 512 
-            mvv = gm[ind+l-1] & 0x3FFF
-            j = mvv&63
-            i = mvv>>8
-            if j > 8 or board[i] != _P:
-                q = board[j]
-                res = sc + mb + val
-                if (not incheck and (q&7==6) and d > 0 and d<7 and pdpth>2 and abs(res) < 90 and
-                    ((res+ (_QS*d*5)) < g or (res - (_QS*d*5)) >= g)):
-                    best_mv = mvv
-                    best = res if res > best else best
-                    break
             # Then all the other moves in the position. We sort them by the value
             # and we take them in reverse order to get the best ones first. We also
             # skip the move if it's the killer move, since we already tried that one.
@@ -795,33 +778,35 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
                 if best_mv == hmove:
                     # lmax-=1
                     continue
-
+                
                 # In quiescent search, if the new score is much less than gamma,
                 # we can break since it cannot be much better (unless a high exchange)
                 # This is known as futility pruning.
-                if od < 0 and (sc + val + mb +(abs(val) + abs(mb)) < g):
-                    res = sc + val + mb
+                res = sc + val + mb
+                if (od < 0 and (res +  (abs(val)) < g)) or od <= -max_qs:
                     best = res if res > best else best
                     break  # inner while
-                if od <= -max_qs:
-                    # we reached the limit of quiescence search, do not bound
-                    res = sc + val + mb
-                    best = res if res > best else best
-                    if best >= g:
-                        break  # inner while
-                else:
-                    # Simple Late Move Reductions (LMR)
-                    if not lmr and not incheck&4 and ((lmax-l > 4 and pdpth > 3)):
-                        lmr = 1
-                    elif incheck&5:
-                        lmr = 0
-                    res = bound(pos, 1-g, od-1, True, best_mv,
-                                val + mb, gm, ind+l, None, incheck, lmr, gm_buf, req_d, max_time)
-                    res = -((res & 0xFFFF)-16384) 
-                    best = res if res > best else best
-                    
-                    if best >= g:
+                # Futility pruning (non-qsearch)
+                # Only when not in check and not in qsearch
+                # If static score is already far belo gamma and ply is above 2, accept it
+                j = best_mv&63
+                i = best_mv>>8
+                if (j > 7 or board[i] != _P) and board[j]&7==6 and (not incheck&4 and d > 2 and d<7 and pdpth>2 and 
+                              ((res+ ((abs(val)) + _FUT )) < g )) :
+                        best = res if res > best else best
                         break
+
+                # Simple Late Move Reductions (LMR)
+                if not lmr and not incheck&4 and ((lmax-l > 4 and d > 3 and pdpth>2)):
+                    lmr = 2
+
+                res = bound(pos, 1-g, od-1-lmr, True, best_mv,
+                            val + mb, gm, ind+l, None, incheck, pdpth+1, gm_buf, req_d, max_time)
+                res = -((res & 0xFFFF)-16384) 
+                best = res if res > best else best
+                
+                if best >= g:
+                    break
             break
 
         # Stalemate checking is a bit tricky: Say we failed low, because
@@ -852,7 +837,7 @@ def bound(pos, g, od, cn, omv, val, gm, ind, gmv, incheck, lmr, gm_buf, req_d, m
         # when the score is better than the gamma so that moves and scores can be stored in the
         # same table. Also when invalidating a previously fh move
         
-        if best >= g and (od >= -16 and (best_mv != 0 or incheck&4)):
+        if best >= g and (od >= -16 and (best_mv != 0)):
             s_tp(h, best_mv, best, pdpth, val, od, 0x8000, (pos[4]+2)>>2, incheck)
         if best < g and not best_mv and fh and hmove and ((od >= -16)) :
             s_tp(h, hmove, best, pdpth, val, od, 0, (pos[4]+2)>>2, incheck)
@@ -947,8 +932,7 @@ def search(gmv):
             yield 0, pscore-4, pscore, last_mv
             return
     g = 0
-    # for i in range(len(gmv)):
-    #     gmv[i] = (gmv[i]&0x00FFFFFF )|( (gmv[i]>>17)<<24)  # reset ordering info
+
     iter = 0
     for req_d in range(1, _MAX_DEPTH+1):
         lower, upper = -_MT_LW, _MT_LW
@@ -968,18 +952,38 @@ def search(gmv):
             yield req_d, g, score, best_mv
             g = (lower + upper + 1) // 2
             iter = (iter + 1)%64
-        # reset_tp_score()
-
-
-
-
 
 def g_m():
     turn = position[2]>>20
     gm = gm_buf
-    l = gen_moves(gm, 0, position, -_MT_LW, 0, 0, h_va[turn], max_h_mv[turn], h_mv[turn], eg, op_mode)
+    l = gen_moves(gm, 0, position, -_MT_LW, 0, h_va[turn], max_h_mv[turn], h_mv[turn], eg, op_mode)
     gm = gm[:l]
     return gm
+
+@micropython.native
+def is_endgame(board):
+    material = sum(PVALUES[p & 7] for p in board if (p & 7) < 5)
+    pawns = sum(1 for p in board if (p & 7) == 0)
+    return material < 13 or pawns < 8
+
+@micropython.native
+def recalc_sc(board, eg):
+    score = 0
+
+    for i, c in enumerate(board):
+        piece = c & 7
+
+        if piece >= 6:
+            continue
+
+        table = piece+6 if eg else piece
+
+        if c & 8:
+            score -= pst[table][i ^ 56]
+        else:
+            score += pst[table][i]
+
+    return score
 
 @micropython.native
 def g_mv():
@@ -992,30 +996,13 @@ def g_mv():
 
     turn = wc_bc_ep_kp >> 20
     # detect endgame and adjust score and pst accordingly
-    pvalues=b"\x00\x03\x03\x05\x09"
-    if not eg and (sum((pvalues[p & 7]) for p in lbrd if (p & 7) < 5) < 13 or sum(1 for p in lbrd if (p & 7)==0) <8):
-    # if not eg and sum(1 for p in lbrd if (p & 7)==0) < 9:
-    # if not eg:
-    #     qr = [p for p in lbrd if p&7==_Q or p&7==_R]
-    #     qr.sort()
-    #     qr = bytes(qr)
-    #     if len(qr)<=2 and (qr==b'\x03\x0B' or qr==b'\x03' or qr=='b\x0B'):
+    
+    if not eg and is_endgame(lbrd):
         max_qs = _MAX_QS + 1
         eg = 1
-        # ok = ksq & 0xFF
-        # ek = ksq >> 8
         xor = ((wc_bc_ep_kp >> 20))*7
         #recalculate score
-        pscore = 0
-        for i, c in enumerate(lbrd):
-            pp = c & 7
-            t = PSTMAP[pp]   
-            if pp<6 and c&8==0: # white pov
-                pscore += pst[t][i^xor]
-            elif pp<6:
-                pscore -= pst[t][i^56^xor]
-
-        pos[3] = pscore
+        pos[3] = recalc_sc(lbrd, eg)
 
 
     ts = [0,] * T_SLOTS
@@ -1119,13 +1106,13 @@ def can_kill_king(mv, ccheck=True):
         king = ksq&0xff
     else:
         king = ksq>>8
-    if makes_check(king,by_black, pos, eg):
+    if makes_check(king,by_black, pos):
         res = True
     elif ccheck and mv:
         kp = (wc_bc_ep_kp & 0xFF)
         if kp != 128:
             for i in (-1, 0, 1):
-                if makes_check(kp+i,by_black, pos, eg):
+                if makes_check(kp+i,by_black, pos):
                     res = True
                     break
     if mv > 0:
