@@ -376,10 +376,6 @@ while True:
                     "hashfull", hashfull,
                     "pv", best_move,
                 )
-                if u.usunfish_gmv.b_overflow > 0:
-                    send(
-                        "info string buffer_overflow", u.usunfish_gmv.b_overflow
-                    )
 
             if  ((lvl == -1 and (best_move_code or u.nodes > 125)) 
                  or (lvl > -1 and u.nodes > 125*(1<<lvl)) 

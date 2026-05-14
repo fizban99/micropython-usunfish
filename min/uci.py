@@ -128,9 +128,7 @@ while True:
 				else:mtg=40
 			inc=min(time_left//mtg+state[f"{turn}inc"]*8//10,time_left//4);max_time=start+inc*8//10;u.max_time=start+inc*15//10
 		for(depth,gamma,score,mv)in u.search(gmv):
-			if score>=gamma and mv:
-				best_move=render_mv(mv,wc_bc_ep_kp>>20);best_move_code=mv;hashfull=sum(u.t_szs)*1000//(u.T_SLOTS*_T_SZS);elapsed=max(1,monotonic()-start);send('info depth',depth,'score cp',score*100//_PAWN,'nodes',u.nodes,'nps',u.nodes*1000//elapsed,'hashfull',hashfull,'pv',best_move)
-				if u.usunfish_gmv.b_overflow>0:send('info string buffer_overflow',u.usunfish_gmv.b_overflow)
+			if score>=gamma and mv:best_move=render_mv(mv,wc_bc_ep_kp>>20);best_move_code=mv;hashfull=sum(u.t_szs)*1000//(u.T_SLOTS*_T_SZS);elapsed=max(1,monotonic()-start);send('info depth',depth,'score cp',score*100//_PAWN,'nodes',u.nodes,'nps',u.nodes*1000//elapsed,'hashfull',hashfull,'pv',best_move)
 			if lvl==-1 and(best_move_code or u.nodes>125)or lvl>-1 and u.nodes>125*(1<<lvl)or score==_MT_LW and depth>=7 or u.max_time and monotonic()-max_time>0:break
 		if best_move_code==0 or best_move_code not in gm:
 			if gm:gm=[A&16383 for A in gmv];best_move_code=gm[-1]

@@ -911,12 +911,11 @@ def g_next_move(op):
 def search(gmv):
     """Iterative deepening MTD-bi search"""
     global nodes, req_d, tp_scored, tp_scoreh,  max_d_sc, t_szs, op_ind, iter
-    global eg, max_qs, req_d, start_time, b_overflow
+    global eg, max_qs, req_d, start_time
 
     _, _, _, pscore, _, _ = position
 
     nodes = 0
-    usunfish_gmv.b_overflow = 0
     if not gmv:
         gmv = g_mv()
     # Check if we are in opening mode

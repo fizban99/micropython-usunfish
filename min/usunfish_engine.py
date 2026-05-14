@@ -288,7 +288,7 @@ def g_next_move(op):
 	if not mvs:op_mode=0;return 0
 	mv,_=mvs[randint(0,len(mvs)-1)];gm=g_m();mv=gm[-mv-1]&16383;return mv
 def search(gmv):
-	global nodes,req_d,tp_scored,tp_scoreh,max_d_sc,t_szs,op_ind,iter;global eg,max_qs,req_d,start_time,b_overflow;_,_,_,pscore,_,_=position;nodes=0;usunfish_gmv.b_overflow=0
+	global nodes,req_d,tp_scored,tp_scoreh,max_d_sc,t_szs,op_ind,iter;global eg,max_qs,req_d,start_time;_,_,_,pscore,_,_=position;nodes=0
 	if not gmv:gmv=g_mv()
 	if op_mode==1:
 		last_mv=g_next_move(op)
