@@ -231,4 +231,4 @@ Besides the MicroPython version, the release includes an `.exe` launcher that st
 
 Based on my own CCRL-like testing, I estimate the MicroPython version to be around **1320 Elo** on the [CCRL Blitz](https://computerchess.org.uk/404/) scale. The PyPy version is estimated to be about **200 Elo stronger**, at approximately **1520 Elo**.
 
-If confirmed by independent testing, this would make it one of the strongest non-NNUE chess engines written in Python ([D-House](https://github.com/alvinypeng/d-house/tree/main) is much stronger), and very likely the strongest written in MicroPython.
+If confirmed by independent testing, this would make it one of the strongest non-NNUE chess engines written in Python ([D-House](https://github.com/alvinypeng/d-house/tree/main) is much stronger, though), and very likely the strongest written in MicroPython.
