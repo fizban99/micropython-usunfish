@@ -229,6 +229,6 @@ You can also play on lichess at [level 0](https://lichess.org/@/uSunfish-l0), [l
 
 Besides the MicroPython version, the release includes an `.exe` launcher that starts the UCI interface using the bundled, abridged PyPy package. The MicroPython version uses about **2.6 MB** of memory, while the PyPy version uses about **50 MB**. By comparison, the original Sunfish did not impose a fixed hash-table limit and could easily grow to several gigabytes of memory usage.
 
-Based on my own CCRL-like testing, I estimate the MicroPython version to be around **1320 Elo** on the [CCRL Blitz](https://computerchess.org.uk/404/) scale. The PyPy version is estimated to be about **200 Elo stronger**, at approximately **1520 Elo**.
+Based on my own CCRL-like testing, I estimate the MicroPython version to be **1280-1350 Elo** on the [CCRL Blitz](https://computerchess.org.uk/404/) scale. The PyPy version is estimated to be about **250 Elo stronger**, at **1520-1600 Elo**.
 
 This is probably one of the strongest non-NNUE chess engines written in "pure" Python ([D-House](https://github.com/alvinypeng/d-house/tree/main) is much stronger, though), and very likely the strongest written in MicroPython.
