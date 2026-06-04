@@ -8,7 +8,7 @@ try:import micropython;runtime=' - micropython'
 except ImportError:
 	def const(x):return x
 	runtime=' - python'
-version='uSunfish 1.1'
+version='uSunfish 1.1a'
 year='2026'
 _MT_LW=const(12680)
 _OP_IND=const(1)
@@ -81,7 +81,7 @@ def get_turn():return u.position[2]>>20
 def reset_pos():
 	if own_book:u.op_mode=1
 	else:u.op_mode=0
-	u.eg=0;u.last_mv=-1;u.ply=0;u.op_ind=_OP_IND;u.max_qs=_MAX_QS;u.history.clear;u.position[:]=hist[-1][:];u.position[0]=hist[-1][0][:];u.history.append(u.position[5])
+	u.eg=0;u.last_mv=-1;u.ply=0;u.op_ind=_OP_IND;u.max_qs=_MAX_QS;u.history.clear();u.position[:]=hist[-1][:];u.position[0]=hist[-1][0][:];u.history.append(u.position[5])
 _T_SZS=const(128)
 def recalc_tp():u.t_szs=[0]*u.T_SLOTS;u.tp_scoreh=[[0]*_T_SZS for A in range(u.T_SLOTS)];u.tp_scored=[[0]*(_T_SZS*2)for A in range(u.T_SLOTS)];u.max_d_sc=[0]*u.T_SLOTS
 if platform in('win32','linux'):u.T_SLOTS=128;recalc_tp()
@@ -96,12 +96,12 @@ while True:
 	if args[0]=='uci':send('id name',version+f" ({platform}{runtime})");send('id author',f"fizban99 ({year})");send(f"option name Skill Level type spin default {LEVEL} min 0 max 7");send(f"option name OwnBook type check default {str(own_book).lower()}");send(f"option name UCI_LimitStrength type check default {str(limit_strength).lower()}");send(f"option name Hash Slots type combo default {u.T_SLOTS} var 2 var 4 var 8 var 16 var 32 var 64 var 128 var 256 var 512");send('uciok')
 	elif args[0]=='isready':send('readyok')
 	elif args[0]=='quit':break
-	elif args[0:5]==['setoption','name','Skill','Level','value']:LEVEL=args[5].strip().lower()
+	elif args[0:5]==['setoption','name','Skill','Level','value']:LEVEL=int(args[5])
 	elif args[0:4]==['setoption','name','OwnBook','value']:own_book=True if args[4].lower()=='true'else False
 	elif args[0:4]==['setoption','name','UCI_LimitStrength','value']:limit_strength=True if args[4].lower()=='true'else False
 	elif args[0:5]==['setoption','name','Hash','Slots','value']:
 		s=int(args[5])
-		if 2<=s<=1024 and s&s-1==0:u.T_SLOTS=s;recalc_tp()
+		if 2<=s<=512 and s&s-1==0:u.T_SLOTS=s;recalc_tp()
 	elif args[:2]==['position','startpos']:
 		hist=[startpos];reset_pos()
 		for mv in args[3:]:move_code=parse_move(mv,1-(u.position[2]>>20));u.mk_mv(move_code);hist.append((u.position[0][:],u.position[1],u.position[2],u.position[3],u.position[4],u.position[5]))
@@ -112,12 +112,12 @@ while True:
 	elif args[:2]==['go','perft']:perft(int(args[2]))
 	elif args[0]=='go'or args[0]=='bench':
 		if u.ply==0:hist=[startpos];reset_pos()
-		state=parse_go(args);start=monotonic();move_str=None;best_move=0;best_move_code=0;board,pscore,wc_bc_ep_kp,ksq,mob,h=hist[-1];turn='b'if wc_bc_ep_kp>>20 else'w';board=board[:]
-		if args[0]=='bench':LEVEL=10;seed(0);u.BASE_SEED=0;u.op_mode=0;limit_strength=True;state[f"{turn}time"]=6000000;state['infinite']=False
+		state=parse_go(args);start=monotonic();move_str=None;best_move=0;best_move_code=0;board,ksq,wc_bc_ep_kp,pscore,mob,h=hist[-1];turn='b'if wc_bc_ep_kp>>20 else'w';board=board[:]
+		if args[0]=='bench':LEVEL=10;seed(0);u.BASE_SEED=0;u.op_mode=0;limit_strength=True;state[f"{turn}time"]=6000000;state['infinite']=False;u.T_SLOTS=16;recalc_tp();start=monotonic()
 		gmv=u.g_mv();gm=[A&16383 for A in gmv];lvl=LEVEL if limit_strength else 100;lvl=int(lvl)-1;best=0;u.position[:]=hist[-1][:];u.max_nodes=125 if lvl<0 else 125*(1<<lvl)
 		if len(gmv)==1:best_move_code=gmv[0]&16383;best_move=render_mv(best_move_code,wc_bc_ep_kp>>20);send('bestmove',best_move);continue
 		time_left=state[f"{turn}time"]
-		if time_left is None:time_left=state['movetime'];max_time=start+time_left;u.max_time=start+time_left
+		if time_left is None:time_left=state['movetime']or 30000;max_time=start+time_left;u.max_time=start+time_left
 		elif time_left is None or state['infinite']:u.max_time=None
 		else:
 			mtg=state['movestogo']
@@ -133,4 +133,4 @@ while True:
 		if best_move_code==0 or best_move_code not in gm:
 			if gm:gm=[A&16383 for A in gmv];best_move_code=gm[-1]
 		best_move=render_mv(best_move_code,wc_bc_ep_kp>>20);send('bestmove',best_move if best_move_code&16191!=0 else'(none)')
-		if args[0]=='bench':sys.exit()
+		if args[0]=='bench':print('Total time:',(monotonic()-start)/1000);sys.exit()

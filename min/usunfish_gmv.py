@@ -126,7 +126,9 @@ def ma(moves,ind,mv,val,lvalue,kll,h_va,max_h_mv,h_mv,p,q,prom,empt):
 	elif q!=empt or prom==3:
 		if p==_P and prom==3:q=4
 		order=((q&7)<<2)+(47-p)
-	elif kll and mv in kll:order=41
+	elif kll and mv in kll:
+		if mv==kll[0]:order=42
+		else:order=41
 	elif val>=_QS:order=40
 	elif max_h_mv:
 		i=get_index(mv,h_mv,0,max_h_mv)
@@ -157,9 +159,9 @@ def king_ring(k,buff):
 				if 0<=ff<=7:buff[i]=base+ff;i+=1
 	return buff[:i]
 @micropython.native
-def rq_mobility(r_file,q_file,enemy_pawns,own_pawns,pf2,sop_r,sop_q,op_r,op_q):pf1=enemy_pawns&(255^own_pawns);s_op=r_file&pf1;op=r_file&pf2;m=sum(s_op>>k&1 for k in range(8))*sop_r;m+=sum(op>>k&1 for k in range(8))*op_r;s_op=q_file&pf1;op=q_file&pf2;m+=sum(s_op>>k&1 for k in range(8))*sop_q;m+=sum(op>>k&1 for k in range(8))*op_q;return m
+def rq_mobility(r_file,q_file,enemy_pawns,own_pawns,pf2,sop_r,sop_q,op_r,op_q,pc4=PC4):pf1=enemy_pawns&(255^own_pawns);a=r_file&pf1;b=r_file&pf2;c=q_file&pf1;d=q_file&pf2;return(pc4[a&15]+pc4[a>>4])*sop_r+(pc4[b&15]+pc4[b>>4])*op_r+(pc4[c&15]+pc4[c>>4])*sop_q+(pc4[d&15]+pc4[d>>4])*op_q
 @micropython.native
-def gen_moves(gm,ind,pos,lvalue,kll,hva,mhva,hmv,eg,op_mode):
+def gen_moves(gm,ind,pos,lvalue,kll,hva,mhva,hmv,eg,op_mode,base_seed):
 	b,ksq,wcek,_,_,_=pos;lpst=pst;l=ind;lbuff=buff;ep=wcek>>8&255;kp=wcek&255;cwq=wcek>>18&2;cke=wcek>>18&1;bk=ksq>>8;wk=ksq&255;xor=wcek>>20;empt=6|xor<<3;xor=xor*7;bkr,bkf,wkr,wkf=bk>>3,bk&7,wk>>3,wk&7;bk_ring=king_ring(bk,lbuff);wk_ring=king_ring(wk,lbuff);bpi=0;wp_files=[0]*8;bp_files=[0]*8;i=-1;bshp=[0,0];mob=[0,0];attc=[0,0]
 	if eg:att=[_KRN_EG,_KRB_EG,_KRR_EG,_KRQ_EG];krc=[_KR1_EG,_KR2_EG,_KR3_EG,_KR4_EG];mbt=mbt_eg;sopn=[_SOPN2R_EG,_SOPN2Q_EG];opn=[_OPN2R_EG,_OPN2Q_EG]
 	else:att=[_KRN_MG,_KRB_MG,_KRR_MG,_KRQ_MG];krc=[_KR1_MG,_KR2_MG,_KR3_MG,_KR4_MG];mbt=mbt_mg;sopn=[_SOPN2R_MG,_SOPN2Q_MG];opn=[_OPN2R_MG,_OPN2Q_MG]
@@ -246,7 +248,7 @@ def gen_moves(gm,ind,pos,lvalue,kll,hva,mhva,hmv,eg,op_mode):
 	l=ind-l
 	if l:
 		moves=gm[ind-l:ind];moves.sort()
-		if not op_mode:
+		if base_seed and not op_mode:
 			l=len(moves)
 			for k in range(1,min(randint(0,3)+1,l)):
 				if moves[-k]>>14==moves[-k-1]>>14:moves[-k],moves[-k-1]=moves[-k-1],moves[-k]
