@@ -8,7 +8,7 @@ try:import micropython;runtime=' - micropython'
 except ImportError:
 	def const(x):return x
 	runtime=' - python'
-version='uSunfish 1.1a'
+version='uSunfish 1.2'
 year='2026'
 _MT_LW=const(12680)
 _OP_IND=const(1)
