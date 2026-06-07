@@ -140,12 +140,12 @@ def ma(moves,ind,mv,val,lvalue,kll,h_va,max_h_mv,h_mv,p,q,prom,empt):
 @micropython.native
 def value(lpst,i,j,prom,p0,q,xor,eg,kp,ep,p):
 	score=lpst[p][j^xor]-lpst[p][i^xor]
-	if 8<=q<14:ind=j^63;q1=7 if eg and q&7==_P else q;score+=lpst[q1&7][ind^xor^7]
-	if abs(j-kp)<2:ind=j^63;score+=lpst[_K][ind^xor^7]+14975
-	if p0==_K and abs(i-j)==2:r_from=_A1 if j<i else _H1;score+=lpst[_R][i+j>>1^xor]-lpst[_R][r_from^xor]
+	if 8<=q<14:ind=j^63;q1=(q&7)+6 if eg else q&7;score+=lpst[q1][ind^xor^7]
+	if abs(j-kp)<2:ind=j^63;score+=lpst[p][ind^xor^7]+14975
+	if p0==_K and abs(i-j)==2:r_from=_A1 if j<i else _H1;p1=_R+6 if eg else _R;score+=lpst[p1][i+j>>1^xor]-lpst[p1][r_from^xor]
 	elif p0==_P:
 		if j==ep:score+=lpst[p][j+_S^56^xor]
-		elif _A8<=j<=_H8:score+=lpst[prom][j^xor]
+		elif _A8<=j<=_H8:prom=prom+6 if eg else prom;score+=lpst[prom][j^xor]
 	return score
 @micropython.native
 def king_ring(k,buff):

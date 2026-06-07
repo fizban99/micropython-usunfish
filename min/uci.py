@@ -8,7 +8,7 @@ try:import micropython;runtime=' - micropython'
 except ImportError:
 	def const(x):return x
 	runtime=' - python'
-version='uSunfish 1.2'
+version='uSunfish 1.2a'
 year='2026'
 _MT_LW=const(12680)
 _OP_IND=const(1)
@@ -39,7 +39,7 @@ def encode_fen_board(fen_board):
 	return B
 def castle_bits(castling):A=castling;B=('Q'in A)<<1|('K'in A);C=('k'in A)<<1|('q'in A);return B<<2|C
 def from_fen(board,color,castling,enpas):
-	B=enpas;A=board;A=encode_fen_board(A);D=u.parse(B)if B!='-'else 128;E=castle_bits(castling)<<16|D<<8|128;C=u.is_endgame(A);u.eg=C;F=u.recalc_sc(A,C);G=A.index(_K|8)<<8|A.index(_K);u.position=[A,G,E,F,0,0]
+	B=enpas;A=board;A=encode_fen_board(A);D=u.parse(B)if B!='-'else 128;E=castle_bits(castling)<<16|D<<8|128;C=u.is_endgame(A);u.eg=C;F=u.recalc_sc(A,C,0);G=A.index(_K|8)<<8|A.index(_K);u.position=[A,G,E,F,0,0]
 	if color!='w':u.rotate()
 	u.hash_board();return u.position
 def cp_pos(position):A=position[:];A[0]=A[0][:];return A

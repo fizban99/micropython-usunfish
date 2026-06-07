@@ -325,19 +325,19 @@ def g_m():turn=position[2]>>20;gm=gm_buf;l=gen_moves(gm,0,position,-_MT_LW,0,h_v
 @micropython.native
 def is_endgame(board):material=sum(PVALUES[p&7]for p in board if p&7<5);pawns=sum(1 for p in board if p&7==0);return material<13 or pawns<8
 @micropython.native
-def recalc_sc(board,eg):
+def recalc_sc(board,eg,xor):
 	score=0
 	for(i,c)in enumerate(board):
 		piece=c&7
 		if piece>=6:continue
 		table=piece+6 if eg else piece
-		if c&8:score-=pst[table][i^56]
-		else:score+=pst[table][i]
+		if c&8:score-=pst[table][i^56^xor]
+		else:score+=pst[table][i^xor]
 	return score
 @micropython.native
 def g_mv():
 	global max_qs,eg,pst;global t_szs,max_d_sc;global max_h_mv;pos=position;lbrd,_,wc_bc_ep_kp,pscore,_,_=pos;turn=wc_bc_ep_kp>>20
-	if not eg and is_endgame(lbrd):eg=1;xor=(wc_bc_ep_kp>>20)*7;pos[3]=recalc_sc(lbrd,eg)
+	if not eg and is_endgame(lbrd):eg=1;xor=(wc_bc_ep_kp>>20)*7;pos[3]=recalc_sc(lbrd,eg,xor)
 	ts=[0]*T_SLOTS;d=0
 	if ply<2:
 		max_h_mv[0],max_h_mv[1]=0,0
