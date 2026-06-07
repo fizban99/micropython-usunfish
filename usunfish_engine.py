@@ -1068,7 +1068,7 @@ def is_endgame(board):
 
 
 @micropython.native
-def recalc_sc(board, eg):
+def recalc_sc(board, eg, xor):
     score = 0
 
     for i, c in enumerate(board):
@@ -1080,9 +1080,9 @@ def recalc_sc(board, eg):
         table = piece + 6 if eg else piece
 
         if c & 8:
-            score -= pst[table][i ^ 56]
+            score -= pst[table][i ^ 56^ xor]
         else:
-            score += pst[table][i]
+            score += pst[table][i^ xor]
 
     return score
 
@@ -1104,7 +1104,7 @@ def g_mv():
         eg = 1
         xor = (wc_bc_ep_kp >> 20) * 7
         # recalculate score
-        pos[3] = recalc_sc(lbrd, eg)
+        pos[3] = recalc_sc(lbrd, eg, xor)
 
     ts = [0,] * T_SLOTS # fmt: skip
     d = 0

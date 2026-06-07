@@ -18,7 +18,7 @@ except ImportError:
 
     runtime = " - python"
 
-version = "uSunfish 1.2"
+version = "uSunfish 1.2a"
 year = "2026"
 _MT_LW = const(12680)
 _OP_IND = const(1)
@@ -78,7 +78,7 @@ def from_fen(board, color, castling, enpas):
     eg = u.is_endgame(board)
     u.eg = eg
 
-    score = u.recalc_sc(board, eg)
+    score = u.recalc_sc(board, eg, 0)
     ksq = (board.index(_K | 8) << 8) | board.index(_K)
 
     u.position = [board, ksq, wc_bc_ep_kp, score, 0, 0]
