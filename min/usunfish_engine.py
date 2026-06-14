@@ -246,7 +246,7 @@ def bound(pos,g,od,cn,omv,val,gm,ind,gmv,incheck,pdpth,gm_buf,req_d,max_time):
 				else:match=0
 			else:match=0
 			if gmv:gm=[m for m in gmv if((m&16777215)>>14)-512>=val_lower];l=len(gm);gm_buf[:l]=gm;gm=gm_buf
-			else:l=gen_moves(gm,ind,pos,val_lower,g_kll(pdpth),h_va[turn],max_h_mv[turn],h_mv[turn],eg,op_mode,BASE_SEED)
+			else:l=gen_moves(gm,ind,pos,val_lower,g_kll(pdpth),h_va[turn],max_h_mv[turn],h_mv[turn],eg,op_mode,BASE_SEED,d)
 			if omv==0:omb=pos[4];mb=1
 			else:mb=(pos[4]+2>>2)-mob+1
 			lmax=l
@@ -257,12 +257,12 @@ def bound(pos,g,od,cn,omv,val,gm,ind,gmv,incheck,pdpth,gm_buf,req_d,max_time):
 					else:match=0
 				if best_mv==hmove:continue
 				res=sc+val+mb
-				if od<0 and res+abs(val)<g or od<=-max_qs:best=res if res>best else best;break
+				if od<0 and res+(abs(val)<<1)<g or od<=-max_qs:best=res if res>best else best;break
 				j=best_mv&63;i=best_mv>>8
-				if not incheck&4 and od<-_MAX_QS+2 and j!=63-(omv&63):continue
+				if not incheck&4 and omv and od<-_MAX_QS+2 and j!=63-(omv&63):continue
 				red=-1 if incheck&4 else 0
-				if not red and(j>7 or board[i]!=_P)and board[j]&7==6 and(d>2 and d<7 and pdpth>2 and res+abs(val)+_FUT<g):best=res if res>best else best;break
-				if not red and(lmax-l>4 and d>3 and pdpth>2):
+				if not red and(j>7 or board[i]!=_P)and board[j]&7==6 and(d>2 and d<7 and pdpth>2 and res+(abs(val)<<1)+_FUT*(d-3)<g):best=res if res>best else best;break
+				if not red and(lmax-l>4 and d>3):
 					if val>0 or board[j]&7!=6:red=1
 					else:red=1+d//4
 				res=bound(pos,1-g,od-1-red,True,best_mv,val+mb,gm,ind+l,None,incheck,pdpth+1,gm_buf,req_d,max_time);res=-((res&65535)-16384)
@@ -271,8 +271,8 @@ def bound(pos,g,od,cn,omv,val,gm,ind,gmv,incheck,pdpth,gm_buf,req_d,max_time):
 				if best>=g:break
 			break
 		if best==-_MT_UP:best_mv=0;best=-_MT_LW if incheck&4 else 0
-		if best>=g and(16>od>=-16 and best_mv!=0)and(cn or pdpth==0):s_tp(h,best_mv,best,pdpth,val,od,32768,pos[4]+2>>2,incheck)
-		if best<g and not best_mv and fh and hmove and 16>od>=-16:s_tp(h,hmove,best,pdpth,val,od,0,pos[4]+2>>2,incheck)
+		if best>=g and(16>od>=-16 and best_mv!=0)and(cn or pdpth==0)and pdpth<16:s_tp(h,best_mv,best,pdpth,val,od,32768,pos[4]+2>>2,incheck)
+		if best<g and not best_mv and fh and hmove and 16>od>=-16 and pdpth<16:s_tp(h,hmove,best,pdpth,val,od,0,pos[4]+2>>2,incheck)
 		max_qs=mqs
 	reset_pos(omv,osc,lwc_bc_ep_kp,dif,omb,oh)
 	if best==_CANCEL:return _NCANCEL
@@ -319,9 +319,9 @@ def search(gmv):
 			else:
 				upper=score
 				if upper<=lower and not widened:lower=-_MT_LW;widened=True
-			eval_dist=upper-lower;yield(req_d,g,score,best_mv);g=(lower+upper+1)//2;iter=(iter+1)%64
+			eval_dist=upper-lower;yield(req_d,g,score,best_mv);g=(lower+upper+1)//2;iter=iter+1&31
 		guess=(lower+upper+1)//2
-def g_m():turn=position[2]>>20;gm=gm_buf;l=gen_moves(gm,0,position,-_MT_LW,0,h_va[turn],max_h_mv[turn],h_mv[turn],eg,op_mode,BASE_SEED);gm=gm[:l];return gm
+def g_m():turn=position[2]>>20;gm=gm_buf;l=gen_moves(gm,0,position,-_MT_LW,0,h_va[turn],max_h_mv[turn],h_mv[turn],eg,op_mode,BASE_SEED,100);gm=gm[:l];return gm
 @micropython.native
 def is_endgame(board):material=sum(PVALUES[p&7]for p in board if p&7<5);pawns=sum(1 for p in board if p&7==0);return material<13 or pawns<8
 @micropython.native

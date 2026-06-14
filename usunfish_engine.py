@@ -804,7 +804,7 @@ def bound(
                 gm_buf[:l] = gm
                 gm = gm_buf
             else:
-                l = gen_moves(gm, ind, pos, val_lower, g_kll(pdpth), h_va[turn], max_h_mv[turn], h_mv[turn], eg, op_mode, BASE_SEED)  # fmt: skip
+                l = gen_moves(gm, ind, pos, val_lower, g_kll(pdpth), h_va[turn], max_h_mv[turn], h_mv[turn], eg, op_mode, BASE_SEED, d)  # fmt: skip
             if omv == 0:
                 omb = pos[4]
                 mb = 1
@@ -836,7 +836,7 @@ def bound(
                 # we can break since it cannot be much better (unless a high exchange)
                 # This is known as futility pruning.
                 res = sc + val + mb
-                if (od < 0 and (res + (abs(val)) < g)) or od <= -max_qs:
+                if (od < 0 and (res + (abs(val)<<1) < g)) or od <= -max_qs:
                     best = res if res > best else best
                     break  # inner while
 
@@ -846,7 +846,7 @@ def bound(
                 j = best_mv & 63
                 i = best_mv >> 8
 
-                if not incheck & 4 and od < -_MAX_QS + 2 and j != 63 - (omv & 63):
+                if not incheck & 4 and omv and od < -_MAX_QS + 2 and j != 63 - (omv & 63):
                     continue
 
                 red = -1 if incheck & 4 else 0  # check extension
@@ -858,7 +858,7 @@ def bound(
                         d > 2
                         and d < 7
                         and pdpth > 2
-                        and (res + abs(val) + _FUT < g)
+                        and (res + (abs(val)<<1) + _FUT * (d-3)  < g)
                     )
                 ):
                     best = res if res > best else best
@@ -867,7 +867,7 @@ def bound(
                 # Simple Late Move Reductions (LMR)
                 if (
                     not red
-                    and (lmax - l > 4 and d > 3 and pdpth > 2)
+                    and (lmax - l > 4 and d > 3)
                 ):
                     if val > 0 or (board[j] & 7) != 6:
                         red = 1
@@ -912,9 +912,9 @@ def bound(
         # when the score is better than the gamma so that moves and scores can be stored in the
         # same table. Also when invalidating a previously fh move
 
-        if best >= g and (16 > od >= -16 and (best_mv != 0)) and (cn or pdpth == 0):
+        if best >= g and (16 > od >= -16 and (best_mv != 0)) and (cn or pdpth == 0) and pdpth < 16:
             s_tp(h, best_mv, best, pdpth, val, od, 0x8000, (pos[4] + 2) >> 2, incheck)
-        if best < g and not best_mv and fh and hmove and (16 > od >= -16):
+        if best < g and not best_mv and fh and hmove and (16 > od >= -16) and pdpth < 16:
             s_tp(h, hmove, best, pdpth, val, od, 0, (pos[4] + 2) >> 2, incheck)
 
         # reset max_qs if modified
@@ -1045,7 +1045,7 @@ def search(gmv):
             eval_dist = upper - lower
             yield req_d, g, score, best_mv
             g = (lower + upper + 1) // 2
-            iter = (iter + 1)%64
+            iter = (iter + 1)&31
 
         guess = (lower + upper + 1) // 2
 
@@ -1054,7 +1054,7 @@ def g_m():
     turn = position[2] >> 20
     gm = gm_buf
     l = gen_moves(
-        gm, 0, position, -_MT_LW, 0, h_va[turn], max_h_mv[turn], h_mv[turn], eg, op_mode, BASE_SEED
+        gm, 0, position, -_MT_LW, 0, h_va[turn], max_h_mv[turn], h_mv[turn], eg, op_mode, BASE_SEED, 100
     )
     gm = gm[:l]
     return gm

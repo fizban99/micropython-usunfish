@@ -52,9 +52,22 @@ _QS = 16
 # limit depth for opening book
 _MAX_OP_D = const(11)
 
-
-buff = [0] * 9  # kingring squares and black pawns
-
+_buff = [0] * 9  # kingring squares and black pawns
+_mob_l = [
+    [
+     [_KRN_MG, _KRB_MG, _KRR_MG, _KRQ_MG],
+     [_KR1_MG, _KR2_MG, _KR3_MG, _KR4_MG],
+     mbt_mg,
+     [_SOPN2R_MG, _SOPN2Q_MG],
+     [_OPN2R_MG, _OPN2Q_MG]],
+    [
+     [_KRN_EG, _KRB_EG, _KRR_EG, _KRQ_EG],
+     [_KR1_EG, _KR2_EG, _KR3_EG, _KR4_EG],
+     mbt_eg,
+     [_SOPN2R_EG, _SOPN2Q_EG],
+     [_OPN2R_EG, _OPN2Q_EG]
+    ]
+]
 
 def parse_sibl(c_ind, d, op):
     def op_get(i, op):
@@ -171,11 +184,11 @@ def ma(moves, ind, mv, val, lvalue, kll, h_va, max_h_mv, h_mv, p, q, prom, empt)
     and later substracted for stability of the sunfish scoring logic
     """
 
-    if val < lvalue or (lvalue >= _QS and prom < 3):
-        # only add moves above the threshold
-        # in quiet search, disregard non-Q promotions
-        # ma is passed prom = 4 for non-promotion moves
-        return ind
+    # if val < lvalue or (lvalue >= _QS and prom < 3):
+    #     # only add moves above the threshold
+    #     # in quiet search, disregard non-Q promotions
+    #     # ma is passed prom = 4 for non-promotion moves
+    #     return ind
 
     if p == _P and prom < 3:
         order = 0
@@ -215,7 +228,7 @@ def ma(moves, ind, mv, val, lvalue, kll, h_va, max_h_mv, h_mv, p, q, prom, empt)
     else:
         order = 0
 
-    if ind < len(moves):
+    if ind < len(moves) and ((order > 40 or ((val >= lvalue or (order > 0 and lvalue > _QS)) and (lvalue >= _QS  or prom >= 3)))):
         moves[ind] = (mv | ((val + 512) << 14)) | (order << 24)
         ind += 1
 
@@ -292,7 +305,7 @@ def rq_mobility(r_file, q_file, enemy_pawns, own_pawns, pf2, sop_r, sop_q, op_r,
 
 
 @micropython.native
-def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed):
+def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed, dpth, lbuff=_buff):
     """A state of a chess game contains:
     board -- a 64 integer list representation of the board
     ksq_b_w -- the king square black and white
@@ -309,7 +322,6 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed)
     b, ksq, wcek, _, _, _ = pos
     lpst = pst
     l = ind
-    lbuff = buff
     # unpack packed status
     ep = (wcek >> 8) & 0xFF  # en passant square
     kp = wcek & 0xFF  # king passant square
@@ -330,21 +342,9 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed)
     bshp = [0, 0]
     mob = [0, 0]
     attc = [0, 0]
-    if eg:
-        att = [_KRN_EG, _KRB_EG, _KRR_EG, _KRQ_EG]
-        krc = [_KR1_EG, _KR2_EG, _KR3_EG, _KR4_EG]
-        mbt = mbt_eg
-        sopn = [_SOPN2R_EG, _SOPN2Q_EG]
-        opn = [_OPN2R_EG, _OPN2Q_EG]
-    else:
-        att = [_KRN_MG, _KRB_MG, _KRR_MG, _KRQ_MG]
-        krc = [_KR1_MG, _KR2_MG, _KR3_MG, _KR4_MG]
-        mbt = mbt_mg
-        sopn = [_SOPN2R_MG, _SOPN2Q_MG]
-        opn = [_OPN2R_MG, _OPN2Q_MG]
+    att, krc, mbt, sopn, opn = _mob_l[eg]
     RQ_files = [0, 0, 0, 0]
     P_files = [0, 0]
-
     for p in b:
         i += 1
 

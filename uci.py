@@ -18,7 +18,7 @@ except ImportError:
 
     runtime = " - python"
 
-version = "uSunfish 1.2a"
+version = "uSunfish 1.2b"
 year = "2026"
 _MT_LW = const(12680)
 _OP_IND = const(1)
@@ -232,6 +232,24 @@ def recalc_tp():
     u.max_d_sc = [0] * u.T_SLOTS
 
 
+def send_info(depth, score, move_code):
+    global best_move
+
+    best_move = render_mv(move_code, wc_bc_ep_kp >> 20)
+    elapsed = max(1, monotonic() - start)
+    hashfull = sum(u.t_szs) * 1000 // (u.T_SLOTS * _T_SZS)
+
+    send(
+        "info depth", depth,
+        "score cp", score * 100 // _PAWN,
+        "nodes", u.nodes,
+        "nps", u.nodes * 1000 // elapsed,
+        "hashfull", hashfull,
+        "pv", best_move,
+    )
+
+
+
 if platform in ("win32", "linux"):
     u.T_SLOTS = 128
     recalc_tp()
@@ -387,20 +405,8 @@ while True:
 
         for depth, gamma, score, mv in u.search(gmv):
             if score >= gamma and mv:
-                best_move = render_mv(mv, wc_bc_ep_kp >> 20)
                 best_move_code = mv
-                hashfull = sum(u.t_szs) * 1000 // (u.T_SLOTS * _T_SZS)
-                elapsed = max(1, monotonic() - start)
-                # fmt: off
-                send(
-                    "info depth", depth,
-                    "score cp", score * 100 // _PAWN,
-                    "nodes", u.nodes,
-                    "nps", u.nodes * 1000 // elapsed,
-                    "hashfull", hashfull,
-                    "pv", best_move,
-                )
-                # fmt: on
+                send_info(depth, score, mv)
             if (
                 (lvl == -1 and (best_move_code or u.nodes > 125))
                 or (lvl > -1 and u.nodes > 125 * (1 << lvl))
@@ -413,8 +419,8 @@ while True:
             if gm:
                 gm = [m & 0x3FFF for m in gmv]
                 best_move_code = gm[-1]
-
-        best_move = render_mv(best_move_code, wc_bc_ep_kp >> 20)
+        
+        send_info(depth, score, best_move_code)
         send("bestmove", best_move if best_move_code & 0x3F3F != 0 else "(none)")
         if args[0] == "bench":
             print("Total time:", (monotonic() - start)/1000)

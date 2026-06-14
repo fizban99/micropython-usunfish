@@ -77,7 +77,8 @@ _K=5
 _BP=8
 _QS=16
 _MAX_OP_D=const(11)
-buff=[0]*9
+_buff=[0]*9
+_mob_l=[[[_KRN_MG,_KRB_MG,_KRR_MG,_KRQ_MG],[_KR1_MG,_KR2_MG,_KR3_MG,_KR4_MG],mbt_mg,[_SOPN2R_MG,_SOPN2Q_MG],[_OPN2R_MG,_OPN2Q_MG]],[[_KRN_EG,_KRB_EG,_KRR_EG,_KRQ_EG],[_KR1_EG,_KR2_EG,_KR3_EG,_KR4_EG],mbt_eg,[_SOPN2R_EG,_SOPN2Q_EG],[_OPN2R_EG,_OPN2Q_EG]]]
 def parse_sibl(c_ind,d,op):
 	def op_get(i,op):
 		if i>>1>=len(op):return 0
@@ -121,7 +122,6 @@ def makes_check(ksq,bbit,position):
 	return False
 @micropython.native
 def ma(moves,ind,mv,val,lvalue,kll,h_va,max_h_mv,h_mv,p,q,prom,empt):
-	if val<lvalue or lvalue>=_QS and prom<3:return ind
 	if p==_P and prom<3:order=0
 	elif q!=empt or prom==3:
 		if p==_P and prom==3:q=4
@@ -135,7 +135,7 @@ def ma(moves,ind,mv,val,lvalue,kll,h_va,max_h_mv,h_mv,p,q,prom,empt):
 		if i>=0:order=h_va[i]
 		else:order=0
 	else:order=0
-	if ind<len(moves):moves[ind]=mv|val+512<<14|order<<24;ind+=1
+	if ind<len(moves)and(order>40 or(val>=lvalue or order>0 and lvalue>_QS)and(lvalue>=_QS or prom>=3)):moves[ind]=mv|val+512<<14|order<<24;ind+=1
 	return ind
 @micropython.native
 def value(lpst,i,j,prom,p0,q,xor,eg,kp,ep,p):
@@ -161,11 +161,8 @@ def king_ring(k,buff):
 @micropython.native
 def rq_mobility(r_file,q_file,enemy_pawns,own_pawns,pf2,sop_r,sop_q,op_r,op_q,pc4=PC4):pf1=enemy_pawns&(255^own_pawns);a=r_file&pf1;b=r_file&pf2;c=q_file&pf1;d=q_file&pf2;return(pc4[a&15]+pc4[a>>4])*sop_r+(pc4[b&15]+pc4[b>>4])*op_r+(pc4[c&15]+pc4[c>>4])*sop_q+(pc4[d&15]+pc4[d>>4])*op_q
 @micropython.native
-def gen_moves(gm,ind,pos,lvalue,kll,hva,mhva,hmv,eg,op_mode,base_seed):
-	b,ksq,wcek,_,_,_=pos;lpst=pst;l=ind;lbuff=buff;ep=wcek>>8&255;kp=wcek&255;cwq=wcek>>18&2;cke=wcek>>18&1;bk=ksq>>8;wk=ksq&255;xor=wcek>>20;empt=6|xor<<3;xor=xor*7;bkr,bkf,wkr,wkf=bk>>3,bk&7,wk>>3,wk&7;bk_ring=king_ring(bk,lbuff);wk_ring=king_ring(wk,lbuff);bpi=0;wp_files=[0]*8;bp_files=[0]*8;i=-1;bshp=[0,0];mob=[0,0];attc=[0,0]
-	if eg:att=[_KRN_EG,_KRB_EG,_KRR_EG,_KRQ_EG];krc=[_KR1_EG,_KR2_EG,_KR3_EG,_KR4_EG];mbt=mbt_eg;sopn=[_SOPN2R_EG,_SOPN2Q_EG];opn=[_OPN2R_EG,_OPN2Q_EG]
-	else:att=[_KRN_MG,_KRB_MG,_KRR_MG,_KRQ_MG];krc=[_KR1_MG,_KR2_MG,_KR3_MG,_KR4_MG];mbt=mbt_mg;sopn=[_SOPN2R_MG,_SOPN2Q_MG];opn=[_OPN2R_MG,_OPN2Q_MG]
-	RQ_files=[0,0,0,0];P_files=[0,0]
+def gen_moves(gm,ind,pos,lvalue,kll,hva,mhva,hmv,eg,op_mode,base_seed,dpth,lbuff=_buff):
+	b,ksq,wcek,_,_,_=pos;lpst=pst;l=ind;ep=wcek>>8&255;kp=wcek&255;cwq=wcek>>18&2;cke=wcek>>18&1;bk=ksq>>8;wk=ksq&255;xor=wcek>>20;empt=6|xor<<3;xor=xor*7;bkr,bkf,wkr,wkf=bk>>3,bk&7,wk>>3,wk&7;bk_ring=king_ring(bk,lbuff);wk_ring=king_ring(wk,lbuff);bpi=0;wp_files=[0]*8;bp_files=[0]*8;i=-1;bshp=[0,0];mob=[0,0];attc=[0,0];att,krc,mbt,sopn,opn=_mob_l[eg];RQ_files=[0,0,0,0];P_files=[0,0]
 	for p in b:
 		i+=1
 		if p==empt:continue
