@@ -122,6 +122,7 @@ def makes_check(ksq,bbit,position):
 	return False
 @micropython.native
 def ma(moves,ind,mv,val,lvalue,kll,h_va,max_h_mv,h_mv,p,q,prom,empt):
+	if lvalue>=_QS and prom<3:return ind
 	if p==_P and prom<3:order=0
 	elif q!=empt or prom==3:
 		if p==_P and prom==3:q=4
@@ -135,7 +136,7 @@ def ma(moves,ind,mv,val,lvalue,kll,h_va,max_h_mv,h_mv,p,q,prom,empt):
 		if i>=0:order=h_va[i]
 		else:order=0
 	else:order=0
-	if ind<len(moves)and(order>40 or(val>=lvalue or order>0 and lvalue>_QS)and(lvalue>=_QS or prom>=3)):moves[ind]=mv|val+512<<14|order<<24;ind+=1
+	if ind<len(moves)and(val>=lvalue or order>40):moves[ind]=mv|val+512<<14|order<<24;ind+=1
 	return ind
 @micropython.native
 def value(lpst,i,j,prom,p0,q,xor,eg,kp,ep,p):

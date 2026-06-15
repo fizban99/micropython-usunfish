@@ -85,8 +85,8 @@ def reset_pos():
 _T_SZS=const(128)
 def recalc_tp():u.t_szs=[0]*u.T_SLOTS;u.tp_scoreh=[[0]*_T_SZS for A in range(u.T_SLOTS)];u.tp_scored=[[0]*(_T_SZS*2)for A in range(u.T_SLOTS)];u.max_d_sc=[0]*u.T_SLOTS
 def send_info(depth,score,move_code):global best_move;best_move=render_mv(move_code,wc_bc_ep_kp>>20);A=max(1,monotonic()-start);B=sum(u.t_szs)*1000//(u.T_SLOTS*_T_SZS);send('info depth',depth,'score cp',score*100//_PAWN,'nodes',u.nodes,'nps',u.nodes*1000//A,'hashfull',B,'pv',best_move)
-if platform in('win32','linux'):u.T_SLOTS=128;recalc_tp()
-if hasattr(sys,'pypy_version_info'):u.T_SLOTS=256;runtime=' - pypy';recalc_tp()
+if platform in('win32','linux'):u.T_SLOTS=512;recalc_tp()
+if hasattr(sys,'pypy_version_info'):u.T_SLOTS=2048;runtime=' - pypy';recalc_tp()
 own_book=True
 while True:
 	line=sys.stdin.readline()
@@ -94,7 +94,7 @@ while True:
 	line=line.strip()
 	if not line:continue
 	args=line.split()
-	if args[0]=='uci':send('id name',version+f" ({platform}{runtime})");send('id author',f"fizban99 ({year})");send(f"option name Skill Level type spin default {LEVEL} min 0 max 7");send(f"option name OwnBook type check default {str(own_book).lower()}");send(f"option name UCI_LimitStrength type check default {str(limit_strength).lower()}");send(f"option name Hash Slots type combo default {u.T_SLOTS} var 2 var 4 var 8 var 16 var 32 var 64 var 128 var 256 var 512");send('uciok')
+	if args[0]=='uci':send('id name',version+f" ({platform}{runtime})");send('id author',f"fizban99 ({year})");send(f"option name Skill Level type spin default {LEVEL} min 0 max 7");send(f"option name OwnBook type check default {str(own_book).lower()}");send(f"option name UCI_LimitStrength type check default {str(limit_strength).lower()}");send(f"option name Hash Slots type combo default {u.T_SLOTS} var 2 var 4 var 8 var 16 var 32 var 64 var 128 var 256 var 512"+(' var 1024 var 2048'if hasattr(sys,'pypy_version_info')else''));send('uciok')
 	elif args[0]=='isready':send('readyok')
 	elif args[0]=='quit':break
 	elif args[0:5]==['setoption','name','Skill','Level','value']:LEVEL=int(args[5])
@@ -102,7 +102,7 @@ while True:
 	elif args[0:4]==['setoption','name','UCI_LimitStrength','value']:limit_strength=True if args[4].lower()=='true'else False
 	elif args[0:5]==['setoption','name','Hash','Slots','value']:
 		s=int(args[5])
-		if 2<=s<=512 and s&s-1==0:u.T_SLOTS=s;recalc_tp()
+		if 2<=s<=(2048 if hasattr(sys,'pypy_version_info')else 512)and s&s-1==0:u.T_SLOTS=s;recalc_tp()
 	elif args[:2]==['position','startpos']:
 		hist=[startpos];reset_pos()
 		for mv in args[3:]:move_code=parse_move(mv,1-(u.position[2]>>20));u.mk_mv(move_code);hist.append((u.position[0][:],u.position[1],u.position[2],u.position[3],u.position[4],u.position[5]))
