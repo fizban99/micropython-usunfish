@@ -184,11 +184,10 @@ def ma(moves, ind, mv, val, lvalue, kll, h_va, max_h_mv, h_mv, p, q, prom, empt)
     and later substracted for stability of the sunfish scoring logic
     """
 
-    # if val < lvalue or (lvalue >= _QS and prom < 3):
-    #     # only add moves above the threshold
-    #     # in quiet search, disregard non-Q promotions
-    #     # ma is passed prom = 4 for non-promotion moves
-    #     return ind
+    if (lvalue >= _QS and prom < 3):
+        # in quiet search, disregard non-Q promotions
+        # ma is passed prom = 4 for non-promotion moves
+        return ind
 
     if p == _P and prom < 3:
         order = 0
@@ -228,7 +227,7 @@ def ma(moves, ind, mv, val, lvalue, kll, h_va, max_h_mv, h_mv, p, q, prom, empt)
     else:
         order = 0
 
-    if ind < len(moves) and ((order > 40 or ((val >= lvalue or (order > 0 and lvalue > _QS)) and (lvalue >= _QS  or prom >= 3)))):
+    if ind < len(moves) and (val >= lvalue or  order > 40):
         moves[ind] = (mv | ((val + 512) << 14)) | (order << 24)
         ind += 1
 
