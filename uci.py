@@ -251,11 +251,11 @@ def send_info(depth, score, move_code):
 
 
 if platform in ("win32", "linux"):
-    u.T_SLOTS = 128
+    u.T_SLOTS = 512
     recalc_tp()
 
 if hasattr(sys, "pypy_version_info"):
-    u.T_SLOTS = 256
+    u.T_SLOTS = 2048
     runtime = " - pypy"
     recalc_tp()
 
@@ -278,7 +278,7 @@ while True:
             f"option name UCI_LimitStrength type check default {str(limit_strength).lower()}"
         )
         send(
-            f"option name Hash Slots type combo default {u.T_SLOTS} var 2 var 4 var 8 var 16 var 32 var 64 var 128 var 256 var 512"
+            f"option name Hash Slots type combo default {u.T_SLOTS} var 2 var 4 var 8 var 16 var 32 var 64 var 128 var 256 var 512" + (" var 1024 var 2048" if hasattr(sys, "pypy_version_info") else "")
         )
         send("uciok")
 
@@ -299,7 +299,7 @@ while True:
 
     elif args[0:5] == ["setoption", "name", "Hash", "Slots", "value"]:
         s = int(args[5])
-        if 2 <= s <= 512 and s & (s - 1) == 0:
+        if 2 <= s <= (2048 if hasattr(sys, "pypy_version_info") else 512) and s & (s - 1) == 0:
             u.T_SLOTS = s
             recalc_tp()
 
