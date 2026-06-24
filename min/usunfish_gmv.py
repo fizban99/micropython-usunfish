@@ -1,84 +1,42 @@
 from usunfish_common import*
 from random import randint
-try:import micropython
-except ImportError:
-	class _MicroPythonFallback:
-		@staticmethod
-		def native(func):return func
-	micropython=_MicroPythonFallback()
-	def const(x):return x
-_BSHP_MG=const(20)
-_BSHP_EG=const(38)
-_OPNR_MG=const(-7)
-_OPNR_EG=const(1)
-_OPNQ_MG=const(6)
-_OPNQ_EG=const(2)
-_SOPNR_MG=const(-1)
-_SOPNR_EG=const(-5)
-_SOPNQ_MG=const(1)
-_SOPNQ_EG=const(0)
-_CTPA_MG=const(-24)
-_CTPA_EG=const(-8)
-_MXEPA_MG=const(4)
-_MXEPA_EG=const(6)
-_MXOPA_MG=const(-4)
-_MXOPA_EG=const(-4)
-_RRPA_MG=const(22)
-_RRPA_EG=const(7)
-_PB_MG=const(4)
-_PB_EG=const(3)
-_OPB_MG=const(-6)
-_OPB_EG=const(-6)
-_KRN_MG=const(6)
-_KRN_EG=const(1)
-_KRB_MG=const(4)
-_KRB_EG=const(1)
-_KRR_MG=const(-1)
-_KRR_EG=const(-1)
-_KRQ_MG=const(6)
-_KRQ_EG=const(3)
-_TEMPO=const(6)
-_PHLX_MG=const(8)
-_PHLX_EG=const(2)
-_PHPA_MG=const(28)
-_PHPA_EG=const(22)
-_PPPA_MG=const(16)
-_PPPA_EG=const(11)
-_KR1_MG=const(-6)
-_KR1_EG=const(-10)
-_KR2_MG=const(2)
-_KR2_EG=const(2)
-_KR3_MG=const(2)
-_KR3_EG=const(8)
-_KR4_MG=const(16)
-_KR4_EG=const(3)
-_SOPN2R_MG=const(4)
-_SOPN2R_EG=const(1)
-_SOPN2Q_MG=const(3)
-_SOPN2Q_EG=const(12)
-_OPN2R_MG=const(10)
-_OPN2R_EG=const(-10)
-_OPN2Q_MG=const(-10)
-_OPN2Q_EG=const(4)
-_A1=56
-_H1=63
-_A8=0
-_H8=7
-_NO=-8
-_E=1
-_S=8
-_W=-1
-_P=0
-_N=1
-_B=2
-_R=3
-_Q=4
-_K=5
-_BP=8
+_A1=const(56)
+_H1=const(63)
+_A8=const(0)
+_H8=const(7)
+_NO=const(-8)
+_E=const(1)
+_S=const(8)
+_W=const(-1)
+_P=const(0)
+_N=const(1)
+_B=const(2)
+_R=const(3)
+_Q=const(4)
+_K=const(5)
+_BP=const(8)
+_PHLX=const(0)
+_CTPA=const(1)
+_MXEPA=const(2)
+_MXOPA=const(3)
+_RRPA=const(4)
+_PHPA=const(5)
+_PPPA=const(6)
+_BSHP=const(7)
+_OPNR=const(8)
+_OPNQ=const(9)
+_SOPNR=const(10)
+_SOPNQ=const(11)
+_PB=const(12)
+_OPB=const(13)
+_ATT=const(1)
+_KRC=const(2)
+_MBT=const(3)
+_SOPN=const(4)
+_OPN=const(5)
 _QS=16
 _MAX_OP_D=const(11)
 _buff=[0]*9
-_mob_l=[[[_KRN_MG,_KRB_MG,_KRR_MG,_KRQ_MG],[_KR1_MG,_KR2_MG,_KR3_MG,_KR4_MG],mbt_mg,[_SOPN2R_MG,_SOPN2Q_MG],[_OPN2R_MG,_OPN2Q_MG]],[[_KRN_EG,_KRB_EG,_KRR_EG,_KRQ_EG],[_KR1_EG,_KR2_EG,_KR3_EG,_KR4_EG],mbt_eg,[_SOPN2R_EG,_SOPN2Q_EG],[_OPN2R_EG,_OPN2Q_EG]]]
 def parse_sibl(c_ind,d,op):
 	def op_get(i,op):
 		if i>>1>=len(op):return 0
@@ -141,12 +99,12 @@ def ma(moves,ind,mv,val,lvalue,kll,h_va,max_h_mv,h_mv,p,q,prom,empt):
 @micropython.native
 def value(lpst,i,j,prom,p0,q,xor,eg,kp,ep,p):
 	score=lpst[p][j^xor]-lpst[p][i^xor]
-	if 8<=q<14:ind=j^63;q1=(q&7)+6 if eg else q&7;score+=lpst[q1][ind^xor^7]
+	if 8<=q<14:ind=j^63;q1=q&7;score+=lpst[q1][ind^xor^7]
 	if abs(j-kp)<2:ind=j^63;score+=lpst[p][ind^xor^7]+14975
-	if p0==_K and abs(i-j)==2:r_from=_A1 if j<i else _H1;p1=_R+6 if eg else _R;score+=lpst[p1][i+j>>1^xor]-lpst[p1][r_from^xor]
+	if p0==_K and abs(i-j)==2:r_from=_A1 if j<i else _H1;p1=_R;score+=lpst[p1][i+j>>1^xor]-lpst[p1][r_from^xor]
 	elif p0==_P:
 		if j==ep:score+=lpst[p][j+_S^56^xor]
-		elif _A8<=j<=_H8:prom=prom+6 if eg else prom;score+=lpst[prom][j^xor]
+		elif _A8<=j<=_H8:prom=prom;score+=lpst[prom][j^xor]
 	return score
 @micropython.native
 def king_ring(k,buff):
@@ -163,31 +121,31 @@ def king_ring(k,buff):
 def rq_mobility(r_file,q_file,enemy_pawns,own_pawns,pf2,sop_r,sop_q,op_r,op_q,pc4=PC4):pf1=enemy_pawns&(255^own_pawns);a=r_file&pf1;b=r_file&pf2;c=q_file&pf1;d=q_file&pf2;return(pc4[a&15]+pc4[a>>4])*sop_r+(pc4[b&15]+pc4[b>>4])*op_r+(pc4[c&15]+pc4[c>>4])*sop_q+(pc4[d&15]+pc4[d>>4])*op_q
 @micropython.native
 def gen_moves(gm,ind,pos,lvalue,kll,hva,mhva,hmv,eg,op_mode,base_seed,dpth,lbuff=_buff):
-	b,ksq,wcek,_,_,_=pos;lpst=pst;l=ind;ep=wcek>>8&255;kp=wcek&255;cwq=wcek>>18&2;cke=wcek>>18&1;bk=ksq>>8;wk=ksq&255;xor=wcek>>20;empt=6|xor<<3;xor=xor*7;bkr,bkf,wkr,wkf=bk>>3,bk&7,wk>>3,wk&7;bk_ring=king_ring(bk,lbuff);wk_ring=king_ring(wk,lbuff);bpi=0;wp_files=[0]*8;bp_files=[0]*8;i=-1;bshp=[0,0];mob=[0,0];attc=[0,0];att,krc,mbt,sopn,opn=_mob_l[eg];RQ_files=[0,0,0,0];P_files=[0,0]
+	b,ksq,wcek,_,_,_=pos
+	if op_mode:lpst=pst[0]
+	else:lpst=pst[eg]
+	l=ind;ep=wcek>>8&255;kp=wcek&255;cwq=wcek>>18&2;cke=wcek>>18&1;bk=ksq>>8;wk=ksq&255;xor=wcek>>20;empt=6|xor<<3;xor=xor*7;bkr,bkf,wkr,wkf=bk>>3,bk&7,wk>>3,wk&7;bk_ring=king_ring(bk,lbuff);wk_ring=king_ring(wk,lbuff);bpi=0;wp_files=[0]*8;bp_files=[0]*8;i=-1;bshp=[0,0];mob=[0,0];attc=[0,0];att=mob_ex[eg][_ATT];krc=mob_ex[eg][_KRC];mbt=mob_ex[eg][_MBT];sopn=mob_ex[eg][_SOPN];opn=mob_ex[eg][_OPN];mob_t=mob_ex[eg][0];RQ_files=[0,0,0,0];P_files=[0,0]
 	for p in b:
 		i+=1
 		if p==empt:continue
-		bbit=p&8;pp=p&7;p16=pp<<4;wb=1 if bbit else 0;fi=i&7;t=pp if not eg or op_mode else pp+6;ring=wk_ring if bbit else bk_ring
+		bbit=p&8;pp=p&7;p16=pp<<4;wb=1 if bbit else 0;fi=i&7;t=pp;ring=wk_ring if bbit else bk_ring
 		if pp==_P:
 			r=i>>3;P_files[wb]=P_files[wb]|1<<fi
 			if bbit:dir=BPDIR;lbuff[bpi]=i;bpi+=1;bp_files[fi]=bp_files[fi]|1<<r
 			else:
 				phlx=0;ppawn=0
 				if fi>0:
-					if b[i-1]==_P:phlx+=1;mob[0]+=_PHLX_EG if eg else _PHLX_MG
+					if b[i-1]==_P:phlx+=1;mob[0]+=mob_t[_PHLX]-99
 					if b[i+7]==_P:ppawn+=1
 				if fi<7:
 					if b[i+9]==_P and not ppawn:ppawn+=1
 				if r<5:
-					if bp_files[fi]==0:
-						mxe=max(abs(r-1-bkr),abs(fi-bkf));mxo=max(abs(r-1-wkr),abs(fi-wkf))
-						if eg:mob[0]+=_CTPA_EG+_MXEPA_EG*mxe*(5-r)+_MXOPA_EG*mxo*(5-r)+_RRPA_EG*(5-r)+_PHPA_EG*phlx+_PPPA_EG*ppawn
-						else:mob[0]+=_CTPA_MG+_MXEPA_MG*mxe*(5-r)+_MXOPA_MG*mxo*(5-r)+_RRPA_MG*(5-r)+_PHPA_MG*phlx+_PPPA_MG*ppawn
+					if bp_files[fi]==0:mxe=max(abs(r-1-bkr),abs(fi-bkf));mxo=max(abs(r-1-wkr),abs(fi-wkf));mob[0]+=mob_t[_CTPA]-99+(mob_t[_MXEPA]-99)*mxe*(5-r)+(mob_t[_MXOPA]-99)*mxo*(5-r)+(mob_t[_RRPA]-99)*(5-r)+(mob_t[_PHPA]-99)*phlx+(mob_t[_PPPA]-99)*ppawn
 				dir=directions[pp];wp_files[fi]=wp_files[fi]|1<<(i>>3)
 		else:
 			dir=directions[pp]
 			if pp==_B:
-				if bshp[wb]==1:mob[wb]+=_BSHP_EG if eg else _BSHP_MG
+				if bshp[wb]==1:mob[wb]+=mob_t[_BSHP]-99
 				bshp[wb]+=1
 			elif pp==_R:RQ_files[wb]=RQ_files[wb]|1<<fi
 			elif pp==_Q:RQ_files[wb+2]=RQ_files[wb+2]|1<<fi
@@ -200,24 +158,24 @@ def gen_moves(gm,ind,pos,lvalue,kll,hva,mhva,hmv,eg,op_mode,base_seed,dpth,lbuff
 					if df==0:
 						opf+=1
 						if opf==2:
-							if pp==_R:mob[wb]+=_OPNR_EG if eg else _OPNR_MG
-							elif pp==_Q:mob[wb]+=_OPNQ_EG if eg else _OPNQ_MG
+							if pp==_R:mob[wb]+=mob_t[_OPNR]-99
+							elif pp==_Q:mob[wb]+=mob_t[_OPNQ]-99
 					break
 				r=j>>3
 				if pp!=_P and pp!=_K:
 					if j in ring:
-						if j!=(wk if bbit else bk):mob[wb]+=att[pp-1]+krc[attc[wb]];attc[wb]+=1 if attc[wb]<3 else 0
+						if j!=(wk if bbit else bk):mob[wb]+=att[pp-1]-99+krc[attc[wb]]-99;attc[wb]+=1 if attc[wb]<3 else 0
 				q=b[j];qn=q^bbit
 				if pp==_P and(d==_NO or d==-_NO):
 					if q!=empt:mob[wb]+=mbt[96+qn]-99;break
 				if qn<6:
 					if df or pp!=_P:
 						if df==0 and qn==_P and(pp==_R or pp==_Q):
-							if pp==_R:mob[wb]+=_SOPNR_EG if eg else _SOPNR_MG
-							else:mob[wb]+=_SOPNQ_EG if eg else _SOPNQ_MG
+							if pp==_R:mob[wb]+=mob_t[_SOPNR]-99
+							else:mob[wb]+=mob_t[_SOPNQ]-99
 						elif pp==_K and(wb==0 and(d>2 or r<6)or wb==1 and(d<-2 or r>1)):
-							if qn==_P:mob[wb]+=_PB_EG if eg else _PB_MG
-							elif qn<5:mob[wb]+=_OPB_EG if eg else _OPB_MG
+							if qn==_P:mob[wb]+=mob_t[_PB]-99
+							elif qn<5:mob[wb]+=mob_t[_OPB]-99
 						else:
 							if p==_P:wp_files[f]=wp_files[f]|1<<r
 							elif p==_BP:bp_files[f]=bp_files[f]|1<<r
@@ -241,8 +199,8 @@ def gen_moves(gm,ind,pos,lvalue,kll,hva,mhva,hmv,eg,op_mode,base_seed,dpth,lbuff
 				if not bbit:v=value(lpst,i,j,0,p,q,xor,eg,kp,ep,t);ind=ma(gm,ind,i<<8|j,v,lvalue,kll,hva,mhva,hmv,p,q,4,empt)
 				if qn^8<6 or pp==_P or pp==_K or pp==_N:break
 				if bbit:continue
-				if i==_A1 and cwq and j<63 and b[j+_E]==_K:it=j+_E;jt=j+_W;tt=_K if not eg or op_mode else _K+6;v=value(lpst,it,jt,0,_K,6,xor,eg,kp,ep,tt);ind=ma(gm,ind,it<<8|jt,v,lvalue,kll,hva,mhva,hmv,p,q,4,empt);break
-				if i==_H1 and cke and j>0 and b[j+_W]==_K:it=j+_W;jt=j+_E;tt=_K if not eg or op_mode else _K+6;v=value(lpst,it,jt,0,_K,6,xor,eg,kp,ep,tt);ind=ma(gm,ind,it<<8|jt,v,lvalue,kll,hva,mhva,hmv,p,q,4,empt);break
+				if i==_A1 and cwq and j<63 and b[j+_E]==_K:it=j+_E;jt=j+_W;tt=_K;v=value(lpst,it,jt,0,_K,6,xor,eg,kp,ep,tt);ind=ma(gm,ind,it<<8|jt,v,lvalue,kll,hva,mhva,hmv,p,q,4,empt);break
+				if i==_H1 and cke and j>0 and b[j+_W]==_K:it=j+_W;jt=j+_E;tt=_K;v=value(lpst,it,jt,0,_K,6,xor,eg,kp,ep,tt);ind=ma(gm,ind,it<<8|jt,v,lvalue,kll,hva,mhva,hmv,p,q,4,empt);break
 	l=ind-l
 	if l:
 		moves=gm[ind-l:ind];moves.sort()
@@ -252,19 +210,16 @@ def gen_moves(gm,ind,pos,lvalue,kll,hva,mhva,hmv,eg,op_mode,base_seed,dpth,lbuff
 				if moves[-k]>>14==moves[-k-1]>>14:moves[-k],moves[-k-1]=moves[-k-1],moves[-k]
 		gm[ind-l:ind]=moves
 	pf2=255^(P_files[1]|P_files[0])
-	if RQ_files[0]or RQ_files[2]:mob[0]+=rq_mobility(RQ_files[0],RQ_files[2],P_files[1],P_files[0],pf2,sopn[0],sopn[1],opn[0],opn[1])
-	if RQ_files[1]or RQ_files[3]:mob[1]+=rq_mobility(RQ_files[1],RQ_files[3],P_files[0],P_files[1],pf2,sopn[0],sopn[1],opn[0],opn[1])
+	if RQ_files[0]or RQ_files[2]:mob[0]+=rq_mobility(RQ_files[0],RQ_files[2],P_files[1],P_files[0],pf2,sopn[0]-99,sopn[1]-99,opn[0]-99,opn[1]-99)
+	if RQ_files[1]or RQ_files[3]:mob[1]+=rq_mobility(RQ_files[1],RQ_files[3],P_files[0],P_files[1],pf2,sopn[0]-99,sopn[1]-99,opn[0]-99,opn[1]-99)
 	for i in lbuff[0:bpi]:
 		r=i>>3;f=i&7;phlx=0;ppawn=0
 		if f>0:
-			if b[i-1]==_BP:phlx+=1;mob[1]+=_PHLX_EG if eg else _PHLX_MG
+			if b[i-1]==_BP:phlx+=1;mob[1]+=mob_t[_PHLX]-99
 			if b[i-9]==_BP and not ppawn:ppawn+=1
 		if r>2:
 			if f<7:
 				if b[i-7]==_BP:ppawn+=1
 			ahead=255^(1<<r)-1
-			if wp_files[f]&ahead==0:
-				mxe=max(abs(r+1-wkr),abs(f-wkf));mxo=max(abs(r+1-bkr),abs(f-bkf))
-				if eg:mob[1]+=_CTPA_EG+_MXEPA_EG*mxe*(r-2)+_MXOPA_EG*mxo*(r-2)+_RRPA_EG*(r-2)+_PHPA_EG*phlx+_PPPA_EG*ppawn
-				else:mob[1]+=_CTPA_MG+_MXEPA_MG*mxe*(r-2)+_MXOPA_MG*mxo*(r-2)+_RRPA_MG*(r-2)+_PHPA_MG*phlx+_PPPA_MG*ppawn
+			if wp_files[f]&ahead==0:mxe=max(abs(r+1-wkr),abs(f-wkf));mxo=max(abs(r+1-bkr),abs(f-bkf));mob[1]+=mob_t[_CTPA]-99+(mob_t[_MXEPA]-99)*mxe*(r-2)+(mob_t[_MXOPA]-99)*mxo*(r-2)+(mob_t[_RRPA]-99)*(r-2)+(mob_t[_PHPA]-99)*phlx+(mob_t[_PPPA]-99)*ppawn
 	pos[4]=mob[0]-mob[1];return l

@@ -1,13 +1,6 @@
 from random import randint,seed
 from binascii import crc32
-from usunfish_common import monotonic
-try:import micropython
-except ImportError:
-	class _MicroPythonFallback:
-		@staticmethod
-		def native(func):return func
-	micropython=_MicroPythonFallback()
-	def const(x):return x
+from usunfish_common import*
 seed(monotonic())
 import gc
 from usunfish_common import*
@@ -17,7 +10,7 @@ import usunfish_gmv as ugmv
 gc.collect()
 BASE_SEED=randint(0,1073741823)
 _OP_IND2=const(0)
-_OP_IND=const(1)
+_OP_IND=const(0)
 _MAX_HIST=const(10)
 gm_buf=[0]*800
 history=list()
@@ -36,12 +29,12 @@ _MT_UP=const(16383)
 _CANCEL=const(16384)
 _NCANCEL=const(0)
 _QS=const(16)
-_QS_A=const(37)
+_QS_A=const(38)
 _FUT=const(10)
 _EVAL_ROUGHNESS=const(4)
 _MAX_DEPTH=const(20)
 _MAX_QS=const(8)
-PVALUES=b'\x00\x03\x03\x05\t'
+PVALUES=b'\x00\x03\x03\x05\t\x00\x00'
 max_qs=_MAX_QS
 max_nodes=8000
 max_time=None
@@ -110,7 +103,7 @@ def move(mv,val,pos):
 	else:ii,jj,pc=i,j,p
 	wc,bc,ep,kp=wc_bc_ep_kp>>18&3,wc_bc_ep_kp>>16&3,wc_bc_ep_kp>>8&255,wc_bc_ep_kp&255;q=board[j]
 	if q&7<6:h^=hash_piece(q^pxor,jj,base_seed)
-	pp=p&7;t=pp if not eg or op_mode else pp+6;val=value(pst,i,j,prom,p,q,xor,eg,kp,ep,t)if val is None else val;ep,kp=128,128;score=pscore+val;dif=board[i]<<4|board[j];board[j]=p;board[i]=6|turn<<3;h^=hash_piece(pc,ii,base_seed);wc=wc&1 if i==_A1 else wc&2 if i==_H1 else wc;bc=bc&2 if j==_A8 else bc&1 if j==_H8 else bc
+	pp=p&7;t=pp;tpst=pst[eg];val=value(tpst,i,j,prom,p,q,xor,eg,kp,ep,t)if val is None else val;ep,kp=128,128;score=pscore+val;dif=board[i]<<4|board[j];board[j]=p;board[i]=6|turn<<3;h^=hash_piece(pc,ii,base_seed);wc=wc&1 if i==_A1 else wc&2 if i==_H1 else wc;bc=bc&2 if j==_A8 else bc&1 if j==_H8 else bc
 	if p==_K:
 		wc=0;h^=hash_piece(pc,jj,base_seed)
 		if abs(j-i)==2:kp=(i+j)//2;k=_A1 if j<i else _H1;dif=k<<16|kp<<8|dif;board[k]=6|turn<<3;h^=hash_piece(_R^pxor,63^k if turn else k,base_seed);board[kp]=_R;h^=hash_piece(_R^pxor,63^kp if turn else kp,base_seed)
@@ -161,7 +154,7 @@ def s_tp(h,mv,best,dr,val,od,fh,mob,incheck):
 				if sd>2 and c_iter-sd*2<=m_it:
 					m_it=c_iter-sd*2;i=j-1>>1
 					if c_iter<=2:break
-			if i==-1:return
+			if i==-1:i=_T_SZS-(h>>16&63)-1
 			max_d_sc[hind]=md if md>dr else dr;new=True
 	if not fh:mv=mv&4294950912
 	if od>=sod:
@@ -238,7 +231,10 @@ def bound(pos,g,od,cn,omv,val,gm,ind,gmv,incheck,pdpth,gm_buf,req_d,max_time):
 			if incheck&4:red=-1
 			else:red=0
 			if hmove!=0:
-				p=board[hmove>>8];t=p&7 if not eg or op_mode else(p&7)+6;val=value(pst,hmove>>8,hmove&63,((hmove&255)>>6)+1,p,board[hmove&63],(wc_bc_ep_kp>>20)*7,eg,kp,wc_bc_ep_kp>>8&255,t)
+				p=board[hmove>>8];t=p&7
+				if op_mode:tpst=pst[0]
+				else:tpst=pst[eg]
+				val=value(tpst,hmove>>8,hmove&63,((hmove&255)>>6)+1,p,board[hmove&63],(wc_bc_ep_kp>>20)*7,eg,kp,wc_bc_ep_kp>>8&255,t)
 				if val>=val_lower:
 					res=bound(pos,1-g,od-1-red,True,hmove,val+mb,gm,ind,None,incheck,pdpth+1,gm_buf,req_d,max_time);res=-((res&65535)-16384);best=res if res>best else best
 					if res>=g:best_mv=hmove;break
@@ -256,13 +252,13 @@ def bound(pos,g,od,cn,omv,val,gm,ind,gmv,incheck,pdpth,gm_buf,req_d,max_time):
 					if ohmove!=best_mv:continue
 					else:match=0
 				if best_mv==hmove:continue
-				res=sc+val+mb
-				if od<0 and res+(abs(val)<<1)<g or od<=-max_qs:best=res if res>best else best;break
+				res=sc+val+mb;mgn=abs(val)+1
+				if od<0 and res+mgn<g or od<=-max_qs:best=res if res>best else best;break
 				j=best_mv&63;i=best_mv>>8
 				if not incheck&4 and omv and od<-_MAX_QS+2 and j!=63-(omv&63):continue
 				red=-1 if incheck&4 else 0
-				if not red and(j>7 or board[i]!=_P)and board[j]&7==6 and(d>2 and d<7 and pdpth>2 and res+(abs(val)<<1)+_FUT*(d-3)<g):best=res if res>best else best;break
-				if not red and(lmax-l>4 and d>3):
+				if not red and(j>7 or board[i]!=_P)and board[j]&7==6 and(d>2 and d<8 and pdpth>2 and res+(mgn<<2)+(d-3)*(abs(mb)+1)<g):best=res if res>best else best;break
+				if not red and(lmax-l>4 and d>3 and pdpth>0):
 					if val>0 or board[j]&7!=6:red=1
 					else:red=1+d//4
 				res=bound(pos,1-g,od-1-red,True,best_mv,val+mb,gm,ind+l,None,incheck,pdpth+1,gm_buf,req_d,max_time);res=-((res&65535)-16384)
@@ -303,13 +299,13 @@ def search(gmv):
 	elif op_mode==2 and ply==1:
 		last_mv=g_next_move(op2)
 		if last_mv!=0:yield(0,pscore-4,pscore,last_mv);return
-	guess=pscore+(mob+2>>2)+1;iter=0
+	guess=pscore+(mob+2>>2)+1;iter=0;eval_roughness=_EVAL_ROUGHNESS-1
 	for req_d in range(1,_MAX_DEPTH+1):
 		margin=16+max(0,req_d-4)*4;lower=guess-margin;upper=guess+margin
 		if lower<-_MT_LW:lower=-_MT_LW
 		if upper>_MT_LW:upper=_MT_LW
 		g=guess;widened=False;eval_dist=upper-lower
-		while eval_dist>_EVAL_ROUGHNESS:
+		while eval_dist>eval_roughness:
 			res=bound(position,g,req_d,False,0,0,gm_buf,0,gmv,0,0,gm_buf,req_d,max_time)
 			if res==_NCANCEL:yield(req_d,g,_NCANCEL,0);return
 			score,best_mv=(res&65535)-16384,res>>16
@@ -320,24 +316,29 @@ def search(gmv):
 				upper=score
 				if upper<=lower and not widened:lower=-_MT_LW;widened=True
 			eval_dist=upper-lower;yield(req_d,g,score,best_mv);g=(lower+upper+1)//2;iter=iter+1&31
-		guess=(lower+upper+1)//2
+		guess=(lower+upper+1)//2;depth_roughness=_EVAL_ROUGHNESS+max(0,req_d-4)//4;eval_roughness=depth_roughness
+		if eval_roughness>6:eval_roughness=6
 def g_m():turn=position[2]>>20;gm=gm_buf;l=gen_moves(gm,0,position,-_MT_LW,0,h_va[turn],max_h_mv[turn],h_mv[turn],eg,op_mode,BASE_SEED,100);gm=gm[:l];return gm
-@micropython.native
-def is_endgame(board):material=sum(PVALUES[p&7]for p in board if p&7<5);pawns=sum(1 for p in board if p&7==0);return material<13 or pawns<8
+def get_phase(board):
+	material=sum(PVALUES[p&7]for p in board);pn=sum(1 for p in board if p&7==0)
+	if material<13 or pn<8:return 2
+	elif material<33:return 1
+	else:return 0
 @micropython.native
 def recalc_sc(board,eg,xor):
-	score=0
+	score=0;tpst=pst[eg]
 	for(i,c)in enumerate(board):
 		piece=c&7
 		if piece>=6:continue
-		table=piece+6 if eg else piece
-		if c&8:score-=pst[table][i^56^xor]
-		else:score+=pst[table][i^xor]
+		if c&8:score-=tpst[piece][i^56^xor]
+		else:score+=tpst[piece][i^xor]
 	return score
 @micropython.native
 def g_mv():
 	global max_qs,eg,pst;global t_szs,max_d_sc;global max_h_mv;pos=position;lbrd,_,wc_bc_ep_kp,pscore,_,_=pos;turn=wc_bc_ep_kp>>20
-	if not eg and is_endgame(lbrd):eg=1;xor=(wc_bc_ep_kp>>20)*7;pos[3]=recalc_sc(lbrd,eg,xor)
+	if eg<2:
+		phase=get_phase(lbrd)
+		if phase>eg:eg=phase;xor=(wc_bc_ep_kp>>20)*7;pos[3]=recalc_sc(lbrd,eg,xor)
 	ts=[0]*T_SLOTS;d=0
 	if ply<2:
 		max_h_mv[0],max_h_mv[1]=0,0

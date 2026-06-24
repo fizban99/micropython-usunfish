@@ -8,7 +8,7 @@ try:import micropython;runtime=' - micropython'
 except ImportError:
 	def const(x):return x
 	runtime=' - python'
-version='uSunfish 1.2b'
+version='uSunfish 1.3'
 year='2026'
 _MT_LW=const(12680)
 _OP_IND=const(1)
@@ -39,7 +39,7 @@ def encode_fen_board(fen_board):
 	return B
 def castle_bits(castling):A=castling;B=('Q'in A)<<1|('K'in A);C=('k'in A)<<1|('q'in A);return B<<2|C
 def from_fen(board,color,castling,enpas):
-	B=enpas;A=board;A=encode_fen_board(A);D=u.parse(B)if B!='-'else 128;E=castle_bits(castling)<<16|D<<8|128;C=u.is_endgame(A);u.eg=C;F=u.recalc_sc(A,C,0);G=A.index(_K|8)<<8|A.index(_K);u.position=[A,G,E,F,0,0]
+	B=enpas;A=board;A=encode_fen_board(A);D=u.parse(B)if B!='-'else 128;E=castle_bits(castling)<<16|D<<8|128;C=u.get_phase(A);u.eg=C;F=u.recalc_sc(A,C,0);G=A.index(_K|8)<<8|A.index(_K);u.position=[A,G,E,F,0,0]
 	if color!='w':u.rotate()
 	u.hash_board();return u.position
 def cp_pos(position):A=position[:];A[0]=A[0][:];return A
@@ -85,7 +85,7 @@ def reset_pos():
 _T_SZS=const(128)
 def recalc_tp():u.t_szs=[0]*u.T_SLOTS;u.tp_scoreh=[[0]*_T_SZS for A in range(u.T_SLOTS)];u.tp_scored=[[0]*(_T_SZS*2)for A in range(u.T_SLOTS)];u.max_d_sc=[0]*u.T_SLOTS
 def send_info(depth,score,move_code):global best_move;best_move=render_mv(move_code,wc_bc_ep_kp>>20);A=max(1,monotonic()-start);B=sum(u.t_szs)*1000//(u.T_SLOTS*_T_SZS);send('info depth',depth,'score cp',score*100//_PAWN,'nodes',u.nodes,'nps',u.nodes*1000//A,'hashfull',B,'pv',best_move)
-if platform in('win32','linux'):u.T_SLOTS=512;recalc_tp()
+if platform in('win32','linux'):u.T_SLOTS=256;recalc_tp()
 if hasattr(sys,'pypy_version_info'):u.T_SLOTS=2048;runtime=' - pypy';recalc_tp()
 own_book=True
 while True:
