@@ -18,24 +18,112 @@ It is tested with MicroPython V1.27.0 on ESP32-S3, but it is not memory-intensiv
 # fizban99 fork
 
 This fork has the following enhancements:
-- Reduced the memory footprint by extensively using MicroPython features such as 31-bit small integers and the const keyword. Evaluation scores are divided by 4 to fit within the 31 bit constraint. The object-oriented structure of the original Sunfish was also removed, and yielding was avoided.
-- It uses a small hash table to reduce node traversal time during the sequential iterations of an iterative-deepening MTD-bi search. The table stores only fail-high moves and uses a simple age-based replacement policy. To save memory, it avoids a precomputed Zobrist hash and instead computes hashes with an [integer hash function](https://github.com/skeeto/hash-prospector), trading memory use for CPU.
-- It includes a small opening book of 1,768 plies derived from the Balsa_270423.pgn and Unique v110225 openings files.
-- As a reply of non-common openings, it has 5 different answers to non-common starting positions using the 400 moves.pgn file from https://www.scacchi64.com/downloads.html
-- The strength is set through the number of nodes evaluated. From level 1 (125 nodes) to level 7 (8000). At level 7 it is calibrated to just below 2100 Elo when playing against the Stockfish engine configured to simulate that rating and it takes around 60 seconds per move on a standard ESP32. Setting it to level 0, it plays at an extremely easy level. The level can be set in the `sunfish.py` file.
-- This version incorporates 
-    - Additional mobility evaluation, including double bishops, open/semiopen files, king safety and advanced pawns.
-    - Enhanced but basic move ordering with
-        - Promotions and captures first, following a simplified MVV-LVA (Most Valueable Victim - Least Valuable Aggressor)
-        - Killer moves second
-        - History heuristic third
-        - Under promotions and non-history quiets last
-    - Basic Late Move Reduction (LMR) 
-    - Agressive futility pruning.
-    - Check extensions
-- The pst and mobility tables have been tuned using the quiet-labeled.v7.epd positions file using the L-BFGS-B algorithm of the scipy library.
-- Instead of a string, the board is a 64-item list that is part of the global position. Although a list to store the board is memory-hungry, its updatable and faster for restoring the difference when returning from a recursive call.
-- Besides the original [Sunfish](https://github.com/thomasahle/sunfish), this engine also draws inspiration on [MinimalChess](https://github.com/lithander/MinimalChessEngine),  [4ku](https://github.com/kz04px/4ku) and [MadChess](https://www.madchess.net/)
+## Features
+
+These are some technical details about the features implemented in this Sunfish-based engine.
+
+- **Sunfish-derived compact chess engine**
+  - Based on the original [Sunfish](https://github.com/thomasahle/sunfish) search framework.
+  - Iterative deepening with MTD-bi / null-window search.
+  - Sunfish-style pseudo-legal move generation.
+  - Null-move pruning.
+  - Reworks the implementation heavily for MicroPython and constrained-memory devices.
+
+- **MicroPython-oriented implementation**
+  - Reduced memory footprint using MicroPython features such as `const` and small-integer-friendly encodings.
+  - Evaluation scores are scaled down to fit within MicroPython integer constraints.
+  - The object-oriented position structure of the original Sunfish was removed.
+  - Memory allocation is minimized to reduce garbage-collection pressure.
+  - A preallocated global move buffer is used to place move lists at different ply depths, avoiding repeated allocation during search.
+  - Yielding and other allocation-heavy patterns from the original design are avoided where possible.
+
+- **64-square piece-array board representation**
+  - Uses a mutable 64-item integer list instead of Sunfish’s string board. Although a list is relatively memory-hungry, it allows faster make/restore by updating only the changed squares.
+  - No mailbox padding. Instead, out-of-bounds detection is handled through rank/file checks.
+  - The side-to-move rotated-board idea from Sunfish is retained.
+
+- **Explicit king-attack handling**
+  - Move generation remains pseudo-legal, but the engine no longer relies on playing all the way to an actual king-capture position.
+  - A `makes_check()` function detects whether a given king is under attack, so if the side to move can capture the opponent king, the search returns a mate score immediately.
+  - Illegal castling-through-check cases are also handled through the king-passant square, as in the original Sunfish.
+  - This, plus a score scaled down by dividing it by 4, allows smaller PST constants, which helps keep scores compatible with MicroPython integer limits.
+
+- **Hand-crafted pseudo-tapered evaluation**
+  - Uses piece-square tables and additional hand-crafted positional terms.
+  - Uses three evaluation phases:
+    - opening/middlegame
+    - blended middle phase, implemented as a weighted average of the other two phases.
+    - endgame
+  - PST and mobility tables were tuned using the `quiet-labeled.v7.epd` positions file with the L-BFGS-B algorithm from SciPy.
+
+- **Integrated mobility evaluation**
+  - Contains a compact MinimalChess-style mobility table, separate from the piece-square tables.
+  - Mobility is calculated during move generation, while the engine is already scanning moves, rays, pawn files, attacks, and king-ring squares, which avoids a separate full-board mobility pass.
+  - Mobility is applied as a second-stage evaluation correction after the PST-based move scoring and ordering. Even though mobility is calculated at this second stage, it still appears to increase Elo significantly.
+  - Mobility-related evaluation includes:
+    - piece mobility by target-square content
+    - bishop pair
+    - open and semi-open files
+    - rook and queen file activity
+    - king safety / king-ring pressure
+    - advanced pawns
+    - passed-pawn-style terms
+    - connected/protected pawn-style terms
+
+- **Move ordering**
+  - Hash move is tried first.
+  - Captures and queen promotions are ordered using a simplified MVV-LVA scheme.
+  - A separate quiet killer-move table is used; this is distinct from the original Sunfish terminology, where the hash move was referred to as a killer move.
+  - History heuristic is used for quiet moves.
+  - Underpromotions and quiet moves without history are searched last.
+  - Positions with the same order and score can be resorted, adding a small amount of non-determinism and play variety.
+
+- **Search enhancements over original Sunfish**
+  - Late Move Reduction.
+  - Aggressive futility pruning.
+  - Check extensions.
+  - Separate quiet killer-move heuristic.
+  - History heuristic.
+  - Bounded node-based strength control.
+
+- **Interruptible time management**
+  - The search can stop inside the recursive search when the allocated time runs out. This differs from original Sunfish, which only stopped after completing an iterative-deepening iteration, and reduces the risk of losing on time when a deeper iteration unexpectedly takes too long.
+
+- **Small bounded transposition table**
+  - Replaces the original Sunfish approach based on an effectively unbounded Python dictionary.
+  - Designed for constrained memory.
+  - Uses a small fixed-size table with compact entries.
+  - Uses an age-based replacement policy.
+  - Stores useful hash moves, especially fail-high moves.
+  - Uses a computed compact Zobrist-like [integer hash function](https://github.com/skeeto/hash-prospector) instead of storing a large precomputed hash-key table.
+  - Hash generation includes startup randomness, adding a bit of non-determinism.
+
+- **Compact hardcoded opening book**
+  - Original Sunfish did not include hardcoded openings. This version includes a compact nibble-encoded opening book. The main book contains about 1,768 plies derived from `Balsa_270423.pgn` and `Unique v110225`.
+  - A secondary reply book provides answers to uncommon first moves using the [`400 moves.pgn`](https://www.scacchi64.com/downloads.html) file.
+
+- **Strength control**
+  - Playing strength is controlled by the number of evaluated nodes.
+  - Level 0 is an extremely easy level.
+  - Levels 1–7 range from 125 nodes to 8000 nodes.
+  - On a standard ESP32, level 7 takes around 60 seconds per move.
+
+- **UCI compatibility**
+  - Supports UCI operation.
+  - Provides configurable options including:
+    - `Skill Level`
+    - `OwnBook`
+    - `UCI_LimitStrength`
+    - `Hash Slots`
+  - Supports FEN setup.
+  - Includes `go`, and `go perft`.
+
+- **External inspiration**
+  - Besides the original Sunfish, this engine also draws inspiration from:
+    - [MinimalChess](https://github.com/lithander/MinimalChessEngine)
+    - [4ku](https://github.com/kz04px/4ku) 
+    - [MadChess](https://www.madchess.net/)
+
 
 # Installation on a MicroPython-compatible board
 
@@ -229,6 +317,6 @@ You can also play on lichess at [level 0](https://lichess.org/@/uSunfish-l0), [l
 
 Besides the MicroPython version, the release includes an `.exe` launcher that starts the UCI interface using the bundled, abridged PyPy package. The MicroPython version uses about **2.6 MB** of memory, while the PyPy version uses about **50 MB**. By comparison, the original Sunfish did not impose a fixed hash-table limit and could easily grow to several gigabytes of memory usage.
 
-Based on my own CCRL-like testing, I estimate the MicroPython version to be **1280-1350 Elo** on the [CCRL Blitz](https://computerchess.org.uk/404/) scale. The PyPy version is estimated to be about **250 Elo stronger**, at **1520-1600 Elo**.
+Based on my own CCRL-like testing, I estimate the MicroPython version to be **1330-1380 Elo** on the [CCRL Blitz](https://computerchess.org.uk/404/) scale. The PyPy version is estimated to be about **250 Elo stronger**, at **1580-1650 Elo**.
 
-This is probably one of the strongest HCE chess engines written in "pure" Python ([Chessidle](https://github.com/alvinypeng/chessidle) and [D-House](https://github.com/alvinypeng/d-house/tree/main) are much stronger, though, but they are not HCE), and very likely the strongest written for MicroPython.
+This is probably one of the strongest HCE chess engines written in "pure" Python, and very likely the strongest written for MicroPython. Note that there are stronger Python engines, like [Antares](https://github.com/Alex2262/Antares), which uses Numba; [Chessidle](https://github.com/alvinypeng/chessidle) and [D-House](https://github.com/alvinypeng/d-house/tree/main), which are "pure" Python, but use NNE; [Habu](https://github.com/radiantcat/habu/blob/main/habu.py) uses a compiled code for NNUE; or [Dinora](https://github.com/Saegl/dinora), which uses Pytorch. The PyPy version of uSunfish is estimated to have a similar performance as [Numbfish](https://github.com/dimdano/numbfish), which actually uses an NNE approach.

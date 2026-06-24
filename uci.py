@@ -18,7 +18,7 @@ except ImportError:
 
     runtime = " - python"
 
-version = "uSunfish 1.2b"
+version = "uSunfish 1.3"
 year = "2026"
 _MT_LW = const(12680)
 _OP_IND = const(1)
@@ -75,7 +75,7 @@ def from_fen(board, color, castling, enpas):
     ep = u.parse(enpas) if enpas != "-" else 128
     wc_bc_ep_kp = (castle_bits(castling) << 16) | (ep << 8) | 0x80
 
-    eg = u.is_endgame(board)
+    eg = u.get_phase(board)
     u.eg = eg
 
     score = u.recalc_sc(board, eg, 0)
@@ -251,7 +251,7 @@ def send_info(depth, score, move_code):
 
 
 if platform in ("win32", "linux"):
-    u.T_SLOTS = 512
+    u.T_SLOTS = 256
     recalc_tp()
 
 if hasattr(sys, "pypy_version_info"):

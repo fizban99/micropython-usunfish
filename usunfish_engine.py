@@ -1,21 +1,6 @@
 from random import randint, seed
 from binascii import crc32
-from usunfish_common import monotonic
-
-try:
-    import micropython
-except ImportError:
-
-    class _MicroPythonFallback:
-        @staticmethod
-        def native(func):
-            return func
-
-    micropython = _MicroPythonFallback()
-
-    def const(x):
-        return x
-
+from usunfish_common import *
 
 seed(monotonic())
 
@@ -30,7 +15,7 @@ gc.collect()
 BASE_SEED = randint(0, 0x3FFFFFFF)
 # initial bytes of the opening tables
 _OP_IND2 = const(0)
-_OP_IND = const(1)
+_OP_IND = const(0)
 # Maximum number of moves to keep in the history
 _MAX_HIST = const(10)
 # Memory allocation for the move buffer
@@ -68,13 +53,13 @@ _CANCEL = const(16384)
 _NCANCEL = const(0)
 # Constants for tuning search
 _QS = const(16)
-_QS_A = const(37)
+_QS_A = const(38)
 _FUT = const(10)
 _EVAL_ROUGHNESS = const(4)
 _MAX_DEPTH = const(20)
 # limit depth for quiescence search
 _MAX_QS = const(8)
-PVALUES = b"\x00\x03\x03\x05\x09"
+PVALUES = b"\x00\x03\x03\x05\x09\x00\x00"
 
 max_qs = _MAX_QS
 max_nodes = 8000
@@ -293,8 +278,9 @@ def move(mv, val, pos):
     if q & 7 < 6:
         h ^= hash_piece(q ^ pxor, jj, base_seed)
     pp = p & 7
-    t = pp if (not eg or op_mode) else pp + 6
-    val = value(pst, i, j, prom, p, q, xor, eg, kp, ep, t) if val is None else (val)
+    t = pp 
+    tpst=pst[eg]
+    val = value(tpst, i, j, prom, p, q, xor, eg, kp, ep, t) if val is None else (val)
     # reset ep and kp
     ep, kp = 128, 128
     score = pscore + val
@@ -477,11 +463,9 @@ def s_tp(h, mv, best, dr, val, od, fh, mob, incheck):
                     if c_iter <= 2:
                         break
             if i == -1:
-                # not found anything older, lose it
-                #  tp_scoreh2[dr] = h
-                #  tp_scored2[dr<<1] = mv
-                #  tp_scored2[(dr<<1)+1] = e
-                return
+                # not found anything older, return
+                i =  _T_SZS-((h>>16)&0x3F)-1
+
             max_d_sc[hind] = md if md > dr else dr
             new = True
 
@@ -775,9 +759,13 @@ def bound(
             # since the gamma is different
             if hmove != 0:
                 p = board[hmove >> 8]
-                t = (p&7) if (not eg or op_mode) else (p&7)+6
+                t = (p&7) #if (not eg or op_mode) else (p&7)+6
+                if op_mode: 
+                    tpst = pst[0]
+                else:
+                    tpst = pst[eg]
                 # fmt: off
-                val = value(pst, hmove >> 8, hmove & 63, ((
+                val = value(tpst, hmove >> 8, hmove & 63, ((
                     hmove & 0xFF) >> 6)+1, p, board[hmove & 63], 
                     (wc_bc_ep_kp >> 20) * 7, eg, kp, (wc_bc_ep_kp>>8) & 0xFF,t)
                 # fmt: on
@@ -836,17 +824,18 @@ def bound(
                 # we can break since it cannot be much better (unless a high exchange)
                 # This is known as futility pruning.
                 res = sc + val + mb
-                if (od < 0 and (res + (abs(val)<<1) < g)) or od <= -max_qs:
+                mgn = abs(val) + 1
+                if (od < 0 and (res + mgn < g)) or od <= -max_qs:
                     best = res if res > best else best
                     break  # inner while
 
                 # Futility pruning (non-qsearch)
                 # Only when not in check and not in qsearch
-                # If static score is already far belo gamma and ply is above 2, accept it
+                # If static score is already far below gamma and ply is above 2, accept it
                 j = best_mv & 63
                 i = best_mv >> 8
 
-                if not incheck & 4 and omv and od < -_MAX_QS + 2 and j != 63 - (omv & 63):
+                if not (incheck & 4) and omv and od < -_MAX_QS + 2 and j != 63 - (omv & 63):
                     continue
 
                 red = -1 if incheck & 4 else 0  # check extension
@@ -856,9 +845,9 @@ def bound(
                     and board[j] & 7 == 6
                     and (
                         d > 2
-                        and d < 7
+                        and d < 8
                         and pdpth > 2
-                        and (res + (abs(val)<<1) + _FUT * (d-3)  < g)
+                        and (res + (mgn<<2) + (d-3)*(abs(mb)+1)  < g)
                     )
                 ):
                     best = res if res > best else best
@@ -867,7 +856,7 @@ def bound(
                 # Simple Late Move Reductions (LMR)
                 if (
                     not red
-                    and (lmax - l > 4 and d > 3)
+                    and (lmax - l > 4 and d > 3 and pdpth > 0)
                 ):
                     if val > 0 or (board[j] & 7) != 6:
                         red = 1
@@ -1011,6 +1000,7 @@ def search(gmv):
     guess = pscore + ((mob+2)>>2) + 1
 
     iter = 0
+    eval_roughness =  _EVAL_ROUGHNESS-1    
     for req_d in range(1, _MAX_DEPTH+1):
         margin = 16 + max(0, req_d-4)*4
         lower = guess - margin
@@ -1021,7 +1011,7 @@ def search(gmv):
         widened = False
 
         eval_dist = upper - lower
-        while eval_dist > _EVAL_ROUGHNESS :
+        while eval_dist > eval_roughness:
             res = bound(position, g, req_d, False, 0, 0,
                         gm_buf, 0, gmv, 0, 0, gm_buf, req_d, max_time)
 
@@ -1047,7 +1037,13 @@ def search(gmv):
             g = (lower + upper + 1) // 2
             iter = (iter + 1)&31
 
+
         guess = (lower + upper + 1) // 2
+        depth_roughness = _EVAL_ROUGHNESS + max(0, req_d -4 ) // 4
+        eval_roughness = depth_roughness
+        if eval_roughness > 6:
+            eval_roughness = 6     
+        
 
 
 def g_m():
@@ -1060,29 +1056,30 @@ def g_m():
     return gm
 
 
-@micropython.native
-def is_endgame(board):
-    material = sum(PVALUES[p & 7] for p in board if (p & 7) < 5)
-    pawns = sum(1 for p in board if (p & 7) == 0)
-    return material < 13 or pawns < 8
-
+def get_phase(board):
+    material = sum(PVALUES[p & 7] for p in board)
+    pn = sum(1 for p in board if (p & 7) == 0)
+    if material < 13 or pn < 8:
+        return 2
+    elif material < 33:
+        return 1
+    else:
+        return 0
 
 @micropython.native
 def recalc_sc(board, eg, xor):
     score = 0
-
+    tpst = pst[eg]
     for i, c in enumerate(board):
         piece = c & 7
 
         if piece >= 6:
             continue
 
-        table = piece + 6 if eg else piece
-
         if c & 8:
-            score -= pst[table][i ^ 56^ xor]
+            score -= tpst[piece][i ^ 56^ xor]
         else:
-            score += pst[table][i^ xor]
+            score += tpst[piece][i^ xor]
 
     return score
 
@@ -1099,12 +1096,14 @@ def g_mv():
     turn = wc_bc_ep_kp >> 20
     # detect endgame and adjust score and pst accordingly
 
-    if not eg and is_endgame(lbrd):
-        # max_qs = _MAX_QS + 1
-        eg = 1
-        xor = (wc_bc_ep_kp >> 20) * 7
-        # recalculate score
-        pos[3] = recalc_sc(lbrd, eg, xor)
+    if eg < 2:
+        phase = get_phase(lbrd)
+        if phase > eg:
+            # max_qs = _MAX_QS + 1
+            eg = phase
+            xor = (wc_bc_ep_kp >> 20) * 7
+            # recalculate score
+            pos[3] = recalc_sc(lbrd, eg, xor)
 
     ts = [0,] * T_SLOTS # fmt: skip
     d = 0

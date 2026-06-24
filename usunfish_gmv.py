@@ -1,45 +1,49 @@
 from usunfish_common import *
 from random import randint
 
-try:
-    import micropython
-except ImportError:
-
-    class _MicroPythonFallback:
-        @staticmethod
-        def native(func):
-            return func
-
-    micropython = _MicroPythonFallback()
-
-    def const(x):
-        return x
-
-
 ##############################################################################
 # Global constants
 ###############################################################################
 # in micropython, const makes the variable a constant, saving memory
 # By prepending an underscore to the variable name saves a little bit more memory
 # https://docs.micropython.org/en/latest/develop/optimizations.html
-_BSHP_MG = const(20); _BSHP_EG = const(38); _OPNR_MG = const(-7); _OPNR_EG = const(1); _OPNQ_MG = const(6); _OPNQ_EG = const(2); _SOPNR_MG = const(-1); _SOPNR_EG = const(-5); _SOPNQ_MG = const(1); _SOPNQ_EG = const(0); _CTPA_MG = const(-24); _CTPA_EG = const(-8); _MXEPA_MG = const(4); _MXEPA_EG = const(6); _MXOPA_MG = const(-4); _MXOPA_EG = const(-4); _RRPA_MG = const(22); _RRPA_EG = const(7); _PB_MG = const(4); _PB_EG = const(3); _OPB_MG = const(-6); _OPB_EG = const(-6); _KRN_MG = const(6); _KRN_EG = const(1); _KRB_MG = const(4); _KRB_EG = const(1); _KRR_MG = const(-1); _KRR_EG = const(-1); _KRQ_MG = const(6); _KRQ_EG = const(3); _TEMPO = const(6); _PHLX_MG = const(8); _PHLX_EG = const(2); _PHPA_MG = const(28); _PHPA_EG = const(22); _PPPA_MG = const(16); _PPPA_EG = const(11); _KR1_MG = const(-6); _KR1_EG = const(-10); _KR2_MG = const(2); _KR2_EG = const(2); _KR3_MG = const(2); _KR3_EG = const(8); _KR4_MG = const(16); _KR4_EG = const(3); _SOPN2R_MG = const(4); _SOPN2R_EG = const(1); _SOPN2Q_MG = const(3); _SOPN2Q_EG = const(12); _OPN2R_MG = const(10); _OPN2R_EG = const(-10); _OPN2Q_MG = const(-10); _OPN2Q_EG = const(4) # fmt: skip
-_A1 = 56
-_H1 = 63
-_A8 = 0
-_H8 = 7
 
-_NO = -8
-_E = 1
-_S = 8
-_W = -1
-_P = 0
-_N = 1
-_B = 2
-_R = 3
-_Q = 4
-_K = 5
-_BP = 8
+_A1 = const(56)
+_H1 = const(63)
+_A8 = const(0)
+_H8 = const(7)
 
+_NO = const(-8)
+_E = const(1)
+_S = const(8)
+_W = const(-1)
+_P = const(0)
+_N = const(1)
+_B = const(2)
+_R = const(3)
+_Q = const(4)
+_K = const(5)
+_BP = const(8)
+
+_PHLX = const(0)
+_CTPA = const(1)
+_MXEPA = const(2) 
+_MXOPA = const(3)
+_RRPA = const(4)
+_PHPA = const(5)
+_PPPA = const(6)
+_BSHP = const(7)
+_OPNR = const(8)
+_OPNQ = const(9)
+_SOPNR = const(10)
+_SOPNQ = const(11)
+_PB = const(12)
+_OPB = const(13)
+_ATT = const(1)
+_KRC = const(2)
+_MBT = const(3)
+_SOPN = const(4)
+_OPN = const(5)
 # In the original sunfish, mate value must be greater than 8*queen + 2*(rook+knight+bishop)
 # King value is set to twice this value such that if the opponent is
 # 8 queens up, but we got the king, we still exceed MATE_VALUE.
@@ -53,21 +57,6 @@ _QS = 16
 _MAX_OP_D = const(11)
 
 _buff = [0] * 9  # kingring squares and black pawns
-_mob_l = [
-    [
-     [_KRN_MG, _KRB_MG, _KRR_MG, _KRQ_MG],
-     [_KR1_MG, _KR2_MG, _KR3_MG, _KR4_MG],
-     mbt_mg,
-     [_SOPN2R_MG, _SOPN2Q_MG],
-     [_OPN2R_MG, _OPN2Q_MG]],
-    [
-     [_KRN_EG, _KRB_EG, _KRR_EG, _KRQ_EG],
-     [_KR1_EG, _KR2_EG, _KR3_EG, _KR4_EG],
-     mbt_eg,
-     [_SOPN2R_EG, _SOPN2Q_EG],
-     [_OPN2R_EG, _OPN2Q_EG]
-    ]
-]
 
 def parse_sibl(c_ind, d, op):
     def op_get(i, op):
@@ -242,7 +231,7 @@ def value(lpst, i, j, prom, p0, q, xor, eg, kp, ep, p):
     # capture of enemy piece
     if 8 <= q < 14:
         ind = j ^ 63
-        q1 = (q & 7)+6 if eg  else (q & 7)
+        q1 = (q & 7)
         score += lpst[q1][ind ^ xor ^ 7]
         # No need to check for king capture, since it is
         # checked with makes_check
@@ -257,7 +246,7 @@ def value(lpst, i, j, prom, p0, q, xor, eg, kp, ep, p):
     # king castling rook PST adjustment
     if p0 == _K and abs(i - j) == 2:
         r_from = _A1 if j < i else _H1
-        p1 = _R +6 if eg else _R
+        p1 = _R 
         score += lpst[p1][((i + j) >> 1) ^ xor] - lpst[p1][r_from ^ xor]
 
     # pawn specials: ep capture / promotion
@@ -266,7 +255,7 @@ def value(lpst, i, j, prom, p0, q, xor, eg, kp, ep, p):
             score += lpst[p][((j + _S) ^ 56) ^ xor]
         elif _A8 <= j <= _H8:  # promotion.
             # No need to substract pst of last row, since it is 0
-            prom = prom + 6 if eg else prom
+            prom = prom 
             score += lpst[prom][j ^ xor]
 
     return score
@@ -319,7 +308,10 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
     # captures or immediately in case of pieces such as knights.
 
     b, ksq, wcek, _, _, _ = pos
-    lpst = pst
+    if op_mode:
+        lpst = pst[0]
+    else:
+        lpst = pst[eg]
     l = ind
     # unpack packed status
     ep = (wcek >> 8) & 0xFF  # en passant square
@@ -341,7 +333,12 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
     bshp = [0, 0]
     mob = [0, 0]
     attc = [0, 0]
-    att, krc, mbt, sopn, opn = _mob_l[eg]
+    att = mob_ex[eg][_ATT]
+    krc = mob_ex[eg][_KRC]
+    mbt = mob_ex[eg][_MBT]
+    sopn = mob_ex[eg][_SOPN]
+    opn = mob_ex[eg][_OPN]
+    mob_t = mob_ex[eg][0]
     RQ_files = [0, 0, 0, 0]
     P_files = [0, 0]
     for p in b:
@@ -355,7 +352,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
         wb = 1 if bbit else 0  # white or black to index mobility
 
         fi = i & 7  # calculate file for detecting out of bounds
-        t = pp if (not eg or op_mode) else pp + 6
+        t = pp 
         ring = wk_ring if bbit else bk_ring  # squares around enemy king
         if pp == _P:
             r = i >> 3
@@ -373,7 +370,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                 if fi > 0:
                     if b[i - 1] == _P:
                         phlx += 1
-                        mob[0] += _PHLX_EG if eg else _PHLX_MG
+                        mob[0] += mob_t[_PHLX]-99
                     if b[i + 7] == _P:
                         ppawn += 1
                 if fi < 7:
@@ -387,23 +384,12 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                         # mob[0] += 3 + ( (((4-rr))*max(bkr, abs(f - bkf)))>>(1-eg)) # bonus for non-blocked pawn by enemy pawns or attacks of pawns
                         mxe = max(abs(r - 1 - bkr), abs(fi - bkf))
                         mxo = max(abs(r - 1 - wkr), abs(fi - wkf))
-                        if eg:
-                            mob[0] += (
-                                _CTPA_EG
-                                + _MXEPA_EG * mxe * (5 - r)
-                                + _MXOPA_EG * mxo * (5 - r)
-                                + _RRPA_EG * (5 - r)
-                                + _PHPA_EG * phlx
-                                + _PPPA_EG * ppawn
-                            )  # bonus for non-blocked pawn by enemy pawns or attacks of pawns
-                        else:
-                            mob[0] += (
-                                _CTPA_MG
-                                + _MXEPA_MG * mxe * (5 - r)
-                                + _MXOPA_MG * mxo * (5 - r)
-                                + _RRPA_MG * (5 - r)
-                                + _PHPA_MG * phlx
-                                + _PPPA_MG * ppawn
+                        mob[0] += (mob_t[_CTPA]-99
+                                + (mob_t[_MXEPA]-99) * mxe * (5 - r)
+                                + (mob_t[_MXOPA]-99) * mxo * (5 - r)
+                                + (mob_t[_RRPA]-99) * (5 - r)
+                                + (mob_t[_PHPA]-99) * phlx
+                                + (mob_t[_PPPA]-99) * ppawn
                             )  # bonus for non-blocked pawn by enemy pawns or attacks of pawns
                         # bonus for distance to promotion and distance of enemy king to square just in front
                         # the closer the enemy king, the less the bonus
@@ -415,7 +401,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
             dir = directions[pp]
             if pp == _B:
                 if bshp[wb] == 1:
-                    mob[wb] += _BSHP_EG if eg else _BSHP_MG
+                    mob[wb] += mob_t[_BSHP]-99
                 bshp[wb] += 1
             elif pp == _R:
                 RQ_files[wb] = RQ_files[wb] | (1 << fi)
@@ -439,9 +425,9 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                         if opf == 2:  # ((pp==_R and not eg) or (pp==_Q and eg)):
                             # open files
                             if pp == _R:
-                                mob[wb] += _OPNR_EG if eg else _OPNR_MG
+                                mob[wb] += mob_t[_OPNR]-99
                             elif pp == _Q:
-                                mob[wb] += _OPNQ_EG if eg else _OPNQ_MG
+                                mob[wb] += mob_t[_OPNQ]-99
                     break
 
                 r = j >> 3
@@ -450,7 +436,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                 if pp != _P and pp != _K:
                     if j in ring:
                         if j != (wk if bbit else bk):
-                            mob[wb] += att[pp - 1] + krc[attc[wb]]
+                            mob[wb] += att[pp - 1]-99 + krc[attc[wb]]-99
                             attc[wb] += 1 if attc[wb] < 3 else 0
 
                 q = b[j]
@@ -474,9 +460,9 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                         ):  # ((pp==_R and not eg) or (pp==_Q and eg)):
                             # naive pawns ahead of the rook or queen bonus (pseudo-semi-open)
                             if pp == _R:
-                                mob[wb] += _SOPNR_EG if eg else _SOPNR_MG
+                                mob[wb] += mob_t[_SOPNR]-99
                             else:
-                                mob[wb] += _SOPNQ_EG if eg else _SOPNQ_MG
+                                mob[wb] += mob_t[_SOPNQ]-99
                         elif pp == _K and (
                             (wb == 0 and (d > 2 or r < 6))
                             or (wb == 1 and (d < -2 or r > 1))
@@ -485,10 +471,10 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                             if qn == _P:
                                 # king safety: pawns below king are
                                 # less useful than 6
-                                mob[wb] += _PB_EG if eg else _PB_MG
+                                mob[wb] += mob_t[_PB]-99
                             elif qn < 5:
                                 # other own pieces are also good above so malus for below
-                                mob[wb] += _OPB_EG if eg else _OPB_MG
+                                mob[wb] += mob_t[_OPB]-99
                             # king blocking king is not possible so no need to check
                         else:
                             if p == _P:
@@ -560,7 +546,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                 if i == _A1 and cwq and j < 63 and b[j + _E] == _K:
                     it = j + _E
                     jt = j + _W
-                    tt = _K if (not eg or op_mode) else _K + 6
+                    tt = _K 
                     v = value(lpst, it, jt, 0, _K, 6, xor, eg, kp, ep, tt)
                     ind = ma(gm, ind, (it << 8) | jt, v, lvalue,
                              kll, hva, mhva, hmv, p, q, 4, empt)
@@ -569,7 +555,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                 if i == _H1 and cke and j > 0 and b[j + _W] == _K:
                     it = j + _W
                     jt = j + _E
-                    tt = _K if (not eg or op_mode) else _K + 6
+                    tt = _K 
                     v = value(lpst, it, jt, 0, _K, 6, xor, eg, kp, ep, tt)
                     ind = ma(gm, ind, (it << 8) | jt, v, lvalue,
                              kll, hva, mhva, hmv, p, q, 4, empt)
@@ -591,10 +577,10 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
     pf2 = 0xFF ^ (P_files[1] | P_files[0])  # neither enemy or own
     # for white
     if RQ_files[0] or RQ_files[2]:
-        mob[0] += rq_mobility(RQ_files[0], RQ_files[2], P_files[1], P_files[0], pf2, sopn[0], sopn[1], opn[0], opn[1]) # fmt: skip
+        mob[0] += rq_mobility(RQ_files[0], RQ_files[2], P_files[1], P_files[0], pf2, sopn[0]-99, sopn[1]-99, opn[0]-99, opn[1]-99) # fmt: skip
     # for black
     if RQ_files[1] or RQ_files[3]:
-        mob[1] += rq_mobility(RQ_files[1], RQ_files[3], P_files[0], P_files[1], pf2, sopn[0], sopn[1], opn[0], opn[1]) # fmt: skip
+        mob[1] += rq_mobility(RQ_files[1], RQ_files[3], P_files[0], P_files[1], pf2, sopn[0]-99, sopn[1]-99, opn[0]-99, opn[1]-99) # fmt: skip
     for i in lbuff[0:bpi]:
         r = i >> 3
         f = i & 7
@@ -603,7 +589,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
         if f > 0:
             if b[i - 1] == _BP:
                 phlx += 1
-                mob[1] += _PHLX_EG if eg else _PHLX_MG
+                mob[1] += mob_t[_PHLX]-99
             if b[i - 9] == _BP and not ppawn:
                 ppawn += 1
         if r > 2:
@@ -615,24 +601,16 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                 # mob[1] += 3 +((((r-3)) * (max(7-wkr, abs(f - wkf))))>>(1-eg))  # bonus for non blocked pawns
                 mxe = max(abs(r + 1 - wkr), abs(f - wkf))
                 mxo = max(abs(r + 1 - bkr), abs(f - bkf))
-                if eg:
-                    mob[1] += (
-                        _CTPA_EG
-                        + _MXEPA_EG * mxe * (r - 2)
-                        + _MXOPA_EG * mxo * (r - 2)
-                        + _RRPA_EG * (r - 2)
-                        + _PHPA_EG * phlx
-                        + _PPPA_EG * ppawn
-                    )  # bonus for non blocked pawns
-                else:
-                    mob[1] += (
-                        _CTPA_MG
-                        + _MXEPA_MG * mxe * (r - 2)
-                        + _MXOPA_MG * mxo * (r - 2)
-                        + _RRPA_MG * (r - 2)
-                        + _PHPA_MG * phlx
-                        + _PPPA_MG * ppawn
-                    )  # bonus for non blocked pawns
+                mob[1] += (
+                    (mob_t[_CTPA]-99)
+                    + (mob_t[_MXEPA]-99) * mxe * (r - 2)
+                    + (mob_t[_MXOPA]-99) * mxo * (r - 2)
+                    + (mob_t[_RRPA]-99) * (r - 2)
+                    + (mob_t[_PHPA]-99) * phlx
+                    + (mob_t[_PPPA]-99) * ppawn
+                )  # bonus for non blocked pawns
+
+
     # Store the mobility in the position list
     pos[4] = mob[0] - mob[1]
     return l
