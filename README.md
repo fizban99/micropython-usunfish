@@ -23,7 +23,7 @@ This fork has the following enhancements:
 These are some technical details about the features implemented in this Sunfish-based engine.
 
 - **Sunfish-derived compact chess engine**
-  - Based on the original [Sunfish](https://github.com/thomasahle/sunfish) search framework.
+  - Based on the original [Sunfish](https://github.com/thomasahle/sunfish) chess engine.
   - Iterative deepening with MTD-bi / null-window search.
   - Sunfish-style pseudo-legal move generation.
   - Null-move pruning.
@@ -315,7 +315,7 @@ The uci commands implemented are basically `position startpos [moves]`, `positio
 The Windows executable is just the micropython runtime with the micropython code frozen and autolaunching the UCI interface using [my fork of MicroPython](https://github.com/fizban99/micropython_windows/tree/windows-msvc-native-v128). It is compatible with [cutechess](https://cutechess.com/), [arena](http://www.playwitharena.de/) and [lucaschess](https://lucaschess.pythonanywhere.com/) and it is only around 900KB.
 You can also play on lichess at [level 0](https://lichess.org/@/uSunfish-l0), [level 1](https://lichess.org/@/uSunfish-l1) or [level 7](https://lichess.org/@/uSunfish-l7).
 
-Besides the MicroPython version, the release includes an `.exe` launcher that starts the UCI interface using the bundled, abridged PyPy package. The MicroPython version uses about **2.6 MB** of memory, while the PyPy version uses about **50 MB**. By comparison, the original Sunfish did not impose a fixed hash-table limit and could easily grow to several gigabytes of memory usage.
+Besides the MicroPython version, the release includes an `.exe` launcher that starts the UCI interface using the bundled, abridged PyPy package. The latest releases bundle the launcher, the PyPy package and the python source code into a single executable by means of the [Enigma Virtual Box](https://enigmaprotector.com/en/aboutvb.html) software. The MicroPython version uses about **2.6 MB** of memory, while the PyPy version uses about **50 MB**. By comparison, the original Sunfish did not impose a fixed hash-table limit and could easily grow to several gigabytes of memory usage.
 
 Based on my own CCRL-like testing, I estimate the MicroPython version to be **1330-1380 Elo** on the [CCRL Blitz](https://computerchess.org.uk/404/) scale. The PyPy version is estimated to be about **250 Elo stronger**, at **1580-1650 Elo**.
 
