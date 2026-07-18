@@ -101,7 +101,7 @@ def main():
             print("My move:", best_move)
             is_end = is_end_game()
             print(MESSAGES[is_end])     
-            if is_end:
+            if is_end > _CHECK:
                 break             
 
         best_move = None
