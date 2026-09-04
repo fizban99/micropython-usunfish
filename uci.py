@@ -371,13 +371,6 @@ def run_bench1():
 
     gmv = u.g_mv()
     gm = [m & 0x3FFF for m in gmv]
-    if len(gmv) == 1:
-        best_move_code = gmv[0] & 0x3FFF
-        send_info(0, curr_score, best_move_code)
-        send("bestmove", render_mv(best_move_code, wc_bc_ep_kp >> 20))
-        print("Bench1 time:", (monotonic() - start) / 1000)
-        return
-
     depth = 0
     for depth, gamma, score, mv in u.search(gmv):
         if score >= gamma and mv:
@@ -422,19 +415,15 @@ def run_bench2(target_depth):
 
     gmv = u.g_mv()
     gm = [m & 0x3FFF for m in gmv]
-    if len(gmv) == 1:
-        best_move_code = gmv[0] & 0x3FFF
-        send_info(0, curr_score, best_move_code)
-        send("bestmove", render_mv(best_move_code, wc_bc_ep_kp >> 20))
-        print("Bench2 time:", (monotonic() - start) / 1000)
-        return
-
     depth = 0
+    st = monotonic()
     for depth, gamma, score, mv in u.search(gmv, target_depth):
         if score >= gamma and mv:
             best_move_code = mv
             curr_score = score
             send_info(depth, score, mv)
+            print(monotonic()-st)
+            st = monotonic()
 
     if best_move_code == 0 or best_move_code not in gm:
         if gm:
@@ -587,7 +576,7 @@ while True:
         lvl = int(lvl) - 1
         best = 0
         u.position[:] = hist[-1][:]
-        u.max_nodes = 125 if lvl < 0 else 125 * (1 << lvl)
+        u.max_nodes = 125 if lvl < 0 else 125 * (1 << lvl) if limit_strength else 1<<29
         if len(gmv) == 1:
             best_move_code = gmv[0] & 0x3FFF
             best_move = render_mv(best_move_code, wc_bc_ep_kp >> 20)
@@ -617,9 +606,10 @@ while True:
                 inc = min(
                     time_left // mtg + state[f"{turn}inc"] * 8 // 10, time_left // 4
                 )
-                max_time = start + inc * 8 // 10
-                u.soft_time = max_time
-                u.max_time = start + inc * 15 // 10
+                max_time = start + inc * 4 // 5
+                
+                u.max_time = start + inc * 3 // 2
+                u.soft_time = u.max_time
         curr_score = u.position[3]
         depth = 0
         for depth, gamma, score, mv in u.search(gmv):
@@ -631,9 +621,9 @@ while True:
                 curr_score = score
             if (
                 (lvl == -1 and (best_move_code or u.nodes > 125))
-                or (lvl > -1 and u.nodes > 125 * (1 << lvl) and curr_score > 0)
+                or (lvl > -1 and u.nodes > u.max_nodes and curr_score > 0)
                 or (score == _MT_LW and depth >= 7)
-                or (10 * u.nodes > 15 * u.max_nodes)
+                or (u.max_time and (monotonic() - max_time) > 0)                
             ):
                 break
 

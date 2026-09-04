@@ -52,11 +52,10 @@ _CANCEL = const(16384)
 _NCANCEL = const(0)
 # Constants for tuning search
 _QS = const(16)
-_RFP = const(180)
 _QS_A = const(38)
 # Fixed target margin used by the deep null-move fuel probe (about two pawns).
-_NULL_MARGIN = const(-50)
-_LMR_AFTER = const(4)
+_NULL_MARGIN = const(-44)
+_RFP = const(35)
 _EVAL_ROUGHNESS = const(4)
 _ASP = const(16)
 _MAX_DEPTH = const(20)
@@ -67,10 +66,6 @@ max_qs = _MAX_QS
 max_nodes = 8000
 max_time = None
 soft_time = None
-# Set by search() when bound() aborts a depth because of the hard node/time
-# watchdog. UCI uses this to distinguish cancellation from a clean return
-# after a fully converged iterative-deepening depth.
-search_cancelled = False
 # killer heuristic table
 t_kll = [0] * (_MAX_DEPTH)
 
@@ -508,8 +503,6 @@ def g_kll(pdpth):
         kll[1] = kll0 >> 16
     return kll
 
-# hits = [dict(),dict(),dict(),dict()]
-# hits_i = [dict(),dict(),dict(),dict()]
 
 
 @micropython.native
@@ -627,7 +620,7 @@ def bound(
 
         nodes += 1
         # kill switch if we are 50% more than the allowed nodes or after max_time
-        if  10 * nodes > 15 * max_nodes or (not (nodes%5) and (max_time and (monotonic() - max_time) > 0)):
+        if  nodes > ((3 * max_nodes) >> 1) or (not (nodes%5) and (max_time and (monotonic() - max_time) > 0)):
             ret, best = 1, _CANCEL
             break
 
@@ -675,37 +668,19 @@ def bound(
         elif makes_check(ksq & 0xFF, 0x08, pos):
             incheck = incheck | 4
 
-        # Child-node quiet-move futility for d=1..2. The move has already been
-        # made, so we can cheaply exclude captures, promotions and checking moves.
-        # The pdpth guard keeps this pruning away from the root.
-        if (
-            not incheck & 4
-            and cn
-            and omv
-            and 0 < d < 3
-            and pdpth > 1+d
-            and (dif & 7) == 6
-            and (((dif >> 4) & 7) != _P or (omv & 63) > 7)
-        ):
-            mgn = abs(val) 
-            if mgn < 2: mgn = 2
-            mgn += (eg==1)*2 + (pdpth==2)*2
-            # In child coordinates, a sufficiently high static score proves the
-            # parent's quiet move futile without generating another move list.
-            if sc - (mgn << 2) * (d + 1 ) >= g:
-                ret, best = 1, sc
-                break
+        # if we reached the maximum depth in quiescent search and not in check, return the score
+        if od < -mqs and not incheck & 4:
+            ret, best = 1, sc + mb
+            break
 
-        # Reverse futility at d=2 only, before move generation. If the static
-        # score is at least 180 above gamma, return it as a lower bound.
-        # if not incheck & 4 and cn and d == 2 and pdpth > 2 and sc + mb - _RFP >= g:
-        #     ret, best = 1, sc + mb
-        #     break
-
-        # if (not incheck & 5 and d > 2 and d < 7 and pdpth > 2 and
-        #                 sc + mb + PC_VAL[4] < g):
-        #     ret, best = 1, sc + mb
-        #     break
+        # Pre-generation reverse futility pruning.
+        # gen_moves() is expensive because it also computes mobility/eval terms.
+        # If we are above gamma even after a margin,
+        # skip move generation at low depths outside checks.
+        rfp = _RFP + 5 * (eg > 0)
+        if not incheck & 4 and cn and (d == 1 or d == 2) and pdpth > 2 and sc + mb - d * rfp >= g:
+            ret, best = 1, sc + mb
+            break
 
         best = -_MT_UP
         ret = 0
@@ -720,23 +695,20 @@ def bound(
             # the root. The material guard reduces zugzwang and extreme-position risk.
             null_red = 0
             null_ok = (
-                not incheck
+                not incheck & 4
                 and d > 2
                 and cn
                 and abs(sc) < 125
+                and pdpth > 0                
                 and any(0 < (p & 7) < 5 for p in board if not (p & 8))
-                and pdpth > 0
             )
             if null_ok and d < 8 :
                 # Conventional null-move pruning for d=3..7: a fail-high cuts.
                 lwc = wc_bc_ep_kp
                 rotate(True)
-                res = bound(pos, 1-g, d-4 if (d>3 and eg!=1) else d-3 , False, 0, mb, gm, ind, gmv, incheck, pdpth+1, gm_buf, req_d, max_time) # fmt: skip
+                res = bound(pos, 1-g, d-4 if (d>3 and eg==0) else d-3 , False, 0, mb, gm, ind, gmv, incheck, pdpth+1, gm_buf, req_d, max_time) # fmt: skip
                 rotate()
                 pos[2] = lwc
-                if res == _NCANCEL:
-                    best = _CANCEL
-                    break
                 res = -((res & 0xFFFF) - 16384)
                 best = res if res > best else best
                 if res >= g:
@@ -772,11 +744,11 @@ def bound(
             # This is known as Internal Iterative Deepening (IID).
             # can_null=False, since we want to make sure we actually find a move.
             if not hmove and d > 2:
-                iid = bound(pos, g, min(d - 2, 5), False, 0, 0, gm, ind, gmv, incheck, pdpth, gm_buf, req_d, max_time) # fmt: skip
-                if iid == _NCANCEL:
+                hmove = bound(pos, g, min(d - 2, 5), False, 0, 0, gm, ind, gmv, incheck, pdpth, gm_buf, req_d, max_time) # fmt: skip
+                if hmove == _NCANCEL:
                     best = _CANCEL
                     break
-                hmove = iid >> 16
+                hmove = hmove >> 16
 
             # If depth == 0 we only try moves with high intrinsic score (captures and
             # promotions). Otherwise we do all moves. This is called quiescent search.
@@ -786,7 +758,7 @@ def bound(
             # Checking positions get a one-ply extension; otherwise inherit any
             # one-ply reduction granted by the deep-null fuel probe.
             if incheck & 4:
-                red = -1
+                red = -1 
             else:
                 red = null_red
 
@@ -809,9 +781,6 @@ def bound(
                 # fmt: on
                 if val >= val_lower:
                     res = bound(pos, 1-g, od-1-red, True, hmove, val+mb, gm, ind, None, incheck, pdpth+1, gm_buf, req_d, max_time) # fmt: skip
-                    if res == _NCANCEL:
-                        best = _CANCEL
-                        break
                     res = -((res & 0xFFFF)-16384)
                     best = res if res > best else best
                     if res >= g:
@@ -836,10 +805,7 @@ def bound(
                 gm = gm_buf
             else:
                 l = gen_moves(gm, ind, pos, val_lower, g_kll(pdpth), h_va[turn], max_h_mv[turn], h_mv[turn], eg, op_mode, BASE_SEED, d)  # fmt: skip
-                if ugmv.draw:
-                    best_mv = 0
-                    best = 0
-                    break
+
             if omv == 0:
                 omb = pos[4]
                 mb = 1
@@ -898,28 +864,26 @@ def bound(
                     best = res if res > best else best
                     break
 
+
                 # Simple Late Move Reductions (LMR). Deep-null red=1 does not
                 # stack with LMR; keep whichever reduction is larger.
                 if (
                     not (incheck & 4)
-                    and (lmax - l > _LMR_AFTER  and d > 3 and d < 10 - (eg == 1) and pdpth > 0)
+                    and (lmax - l > 4 and d > 3 and pdpth > 0)
                 ):
                     if val > 0 or (board[j] & 7) != 6:
                         lmr_red = 1
                     else:
-                        lmr_red = 1 + d // 4
+                        lmr_red = 1 + d // 4 
                     red = lmr_red if lmr_red > red else red
                 res = bound(pos, 1-g, od-1-red, True, best_mv, val + mb, gm, ind+l, None, incheck, pdpth+1, gm_buf, req_d, max_time) # fmt: skip
-                if res == _NCANCEL:
-                    best = _CANCEL
-                    break
                 res = -((res & 0xFFFF)-16384)
                 if red > 0 and res >= g + 5:
+                    if res == _CANCEL:
+                        best = res
+                        break                    
                     # A reduced fail-high with margin is verified at full depth.
                     res = bound(pos, 1-g, od-1, True, best_mv, val + mb, gm, ind+l, None, incheck, pdpth+1, gm_buf, req_d, max_time) # fmt: skip
-                    if res == _NCANCEL:
-                        best = _CANCEL
-                        break
                     res = -((res & 0xFFFF)-16384) 
 
                 best = res if res > best else best
@@ -1020,12 +984,11 @@ def g_next_move(op):
 def search(gmv, depth_limit=0):
     """Iterative deepening MTD-bi search, optionally capped at depth_limit."""
     global nodes, req_d, tp_scored, tp_scoreh, max_d_sc, t_szs, op_ind, iter
-    global eg, max_qs, req_d, start_time, soft_time, search_cancelled
+    global eg, max_qs, req_d, start_time, soft_time
 
     
 
     nodes = 0
-    search_cancelled = False
     if not gmv:
         gmv = g_mv()
     _, _, _, pscore, mob, _ = position        
@@ -1060,23 +1023,26 @@ def search(gmv, depth_limit=0):
 
         eval_dist = upper - lower
         first_probe = True
+        n_iter = 0
+        total_time = 0
         while eval_dist > eval_roughness:
             # Predict each MTD probe before starting it.  A new depth is
-            # allowed 1.5x the previous probe's cost; later probes at the
+            # allowed 2x the previous probe's cost; later probes at the
             # same depth use a 1.0x estimate.  Once a probe starts, only the
             # hard watchdog may interrupt it.
             probe_start = monotonic()
             if soft_time and last_probe_time:
-                predicted = (last_probe_time * 2) if first_probe else last_probe_time * 3 // 2
+                predicted = last_probe_time  * 2
                 if probe_start + predicted >= soft_time:
                     return
 
             res = bound(position, g, req_d, False, 0, 0,
                         gm_buf, 0, gmv, 0, 0, gm_buf, req_d, max_time)
-            last_probe_time = monotonic() - probe_start
+            total_time += monotonic() - probe_start
+            n_iter +=1
+            last_probe_time = total_time // n_iter
 
             if res == _NCANCEL:
-                search_cancelled = True
                 yield req_d, g, _NCANCEL, 0
                 return
 

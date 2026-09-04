@@ -52,10 +52,9 @@ _OPN = const(5)
 # we can use constants that are close to the original, but fit in 14 bits.
 # This will allow efficient usage of 30 bit positive integers in micropython
 # Constants for tuning search
-_QS = 16
+_QS = const(16)
 # limit depth for opening book
 _MAX_OP_D = const(11)
-draw = False
 _buff = [0] * 9  # kingring squares and black pawns
 
 def op_get(i, op):
@@ -318,8 +317,8 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
     # For each of our pieces, iterate through each possible 'ray' of moves,
     # as defined in the 'directions' map. The rays are broken e.g. by
     # captures or immediately in case of pieces such as knights.
-    global draw 
-    draw = False
+    # global draw 
+    # draw = False    
     b, ksq, wcek, pscore, _, _ = pos
     if op_mode:
         lpst = pst[0]
@@ -354,7 +353,6 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
     mob_t = mob_ex[eg][0]
     RQ_files = [0, 0, 0, 0]
     P_files = [0, 0]
-    draw_material = 0
     for p in b:
         i += 1
 
@@ -362,8 +360,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
             continue
         bbit = p & 8  # is black piece
         pp = p & 7  # piece type
-        if eg == 2:
-            draw_material += PVALUES[pp]
+        # if eg==2 and 0 < pp < 5: pcs += pvalues[pp]
         p16 = pp << 4  # piece type times 16 for mobility table
         wb = 1 if bbit else 0  # white or black to index mobility
 
@@ -393,7 +390,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                     if b[i + 9] == _P and not ppawn:
                         ppawn += 1
                 # the scan of black pawns above the current white pawn has been performed, so we caculate bonus for non-blocked pawns
-                if r < 5 + (eg==2):
+                if r < 5:
                     # passed pawn bonus from rank 3 onwards (7-5 =2 based 0 is rank)
                     # if not any( (bc>>3)<=rr and (bc&7)==f  for lst in (lbuff[24:bci], lbuff[40:bpi]) for bc in lst):
                     if (bp_files[fi]) == 0:
@@ -424,9 +421,13 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
             elif pp == _Q:
                 RQ_files[wb + 2] = RQ_files[wb + 2] | (1 << fi)
         opf = 0
+        ring_attack = pp != _P and pp != _K
+        crawler = pp == _P or pp == _K or pp == _N
+        isrq = pp == _R or pp == _Q
         for dn in range(0, len(dir) - 1, 2):
             df = dir[dn] - 2
             d = dir[dn + 1] - 17
+            pawn_fwd = pp == _P and (d == _NO or d == -_NO)
             j = i
             f = fi
             while True:
@@ -449,30 +450,27 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                 r = j >> 3
                 # king safety bonus for attacking the inner ring of the
                 # enemy king
-                if pp != _P and pp != _K:
-                    if j in ring:
-                        if j != (wk if bbit else bk):
-                            mob[wb] += att[pp - 1]-99 + krc[attc[wb]]-99
-                            attc[wb] += 1 if attc[wb] < 3 else 0
+                if ring_attack and j in ring:
+                    if j != (wk if bbit else bk):
+                        mob[wb] += att[pp - 1]-99 + krc[attc[wb]]-99
+                        attc[wb] += 1 if attc[wb] < 3 else 0
 
                 q = b[j]
                 # q normalized according to p
                 # so friendly is white enemy is black
                 qn = q ^ bbit
 
-                if pp == _P and (d == _NO or d == -_NO):
-                    # single forward move
-                    if q != empt:
-                        # non-capture single move up blocked
-                        mob[wb] += mbt[96 + qn] - 99
-                        break
+                if pawn_fwd and q != empt:
+                    # single forward move and non-capture single move up blocked
+                    mob[wb] += mbt[96 + qn] - 99
+                    break
 
                 if qn < 6:
                     # friendly piece, stop here, but calculate mobility for all
                     # and for pawns if capture move (df!=0).
                     if df or pp != _P:
                         if (
-                            df == 0 and qn == _P and (pp == _R or pp == _Q)
+                            df == 0 and qn == _P and isrq
                         ):  # ((pp==_R and not eg) or (pp==_Q and eg)):
                             # naive pawns ahead of the rook or queen bonus (pseudo-semi-open)
                             if pp == _R:
@@ -552,7 +550,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                             kll, hva, mhva, hmv, p, q, 4, empt, op_mode)
 
                 # stop crawlers (P,N,K) and after any capture
-                if ((qn ^ 0x8) < 6) or pp == _P or pp == _K or pp == _N:
+                if crawler or ((qn ^ 0x8) < 6):
                     break
 
                 # no more calculations for black
@@ -608,7 +606,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                 mob[1] += mob_t[_PHLX]-99
             if b[i - 9] == _BP and not ppawn:
                 ppawn += 1
-        if r > 2 - (eg==2):
+        if r > 2:
             if f < 7:
                 if b[i - 7] == _BP:
                     ppawn += 1
@@ -627,29 +625,6 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                 )  # bonus for non blocked pawns
 
 
-    # Pawnless late-endgame handling.  Reuse the same 3/3/5/9 material
-    # scale as get_phase(): K vs K and K+minor vs K are simple draws.
-    if eg == 2 and l and not (P_files[0] | P_files[1]):
-        if draw_material <= 3:
-            draw = True
-            return l
-
-        king_dist14 = (14 - abs(bkr - wkr) - abs(bkf - wkf))
-        # Raw value of the last (highest sorted) move.  Value is packed in
-        # bits 14..23 with a +512 offset; ordering bonus starts at bit 24
-        if pscore > 80:
-            mh_d = (
-                abs((bkr << 1) - 7)
-                + abs((bkf << 1) - 7) - 2
-            ) 
-            mob[0] += (mh_d * mh_d + king_dist14) >> 3
-
-        elif pscore < -80:
-            mh_d = (
-                abs((wkr << 1) - 7)
-                + abs((wkf << 1) - 7) - 2
-            ) 
-            mob[1] += (mh_d * mh_d + king_dist14) >> 3
 
     # Store the mobility in the position list
     pos[4] = mob[0] - mob[1]
