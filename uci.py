@@ -18,10 +18,10 @@ except ImportError:
 
     runtime = " - python"
 
-version = "uSunfish 1.3"
+version = "uSunfish 1.4"
 year = "2026"
 _MT_LW = const(12680)
-_OP_IND = const(1)
+_OP_IND = 1 if u.op[0]>>4==0 else 0
 _MAX_QS = const(8)
 _PAWN = const(22)
 
@@ -35,6 +35,13 @@ for arg in sys.argv[1:]:
 
 startpos = u.position[:]
 startpos[0] = startpos[0][:]
+
+# Cache the last UCI startpos move list. GUIs such as Lichess send the full
+# game on every turn ("position startpos moves ..."). If the new list is an
+# exact extension of the previous one, only the appended moves need replaying.
+# A compact string is used instead of retaining another list of move strings.
+last_startpos_moves = None
+last_startpos_count = 0
 
 _P = 0
 _N = 1
@@ -221,6 +228,35 @@ def reset_pos():
     u.history.append(u.position[5])
 
 
+def startpos_is_extension(new_moves):
+    """Return True only if new_moves exactly extends the cached move list."""
+    if last_startpos_moves is None:
+        return False
+    if not last_startpos_moves:
+        return True
+    return (
+        new_moves == last_startpos_moves
+        or (
+            len(new_moves) > len(last_startpos_moves)
+            and new_moves.startswith(last_startpos_moves)
+            and new_moves[len(last_startpos_moves)] == " "
+        )
+    )
+
+
+def append_hist():
+    hist.append(
+        (
+            u.position[0][:],
+            u.position[1],
+            u.position[2],
+            u.position[3],
+            u.position[4],
+            u.position[5],
+        )
+    )
+
+
 _T_SZS = const(128)
 
 
@@ -230,6 +266,51 @@ def recalc_tp():
     # preallocate the score table
     u.tp_scored = [[0] * (_T_SZS * 2) for _ in range(u.T_SLOTS)]
     u.max_d_sc = [0] * u.T_SLOTS
+
+
+def clear_search_state(clear_history=False):
+    """Logically clear reusable search state without reallocating large tables."""
+
+    u.max_qs = _MAX_QS
+    u.soft_time = None
+    u.max_time = None
+    u.max_h_mv[0], u.max_h_mv[1] = 0, 0
+
+    # Killer and TT entries are live only through these small index tables.
+    for i in range(len(u.t_kll)):
+        u.t_kll[i] = 0
+    for i in range(u.T_SLOTS):
+        u.t_szs[i] = 0
+        u.max_d_sc[i] = 0
+
+    if clear_history:
+        u.history.clear()
+
+
+def reset_game(root, book=True):
+    """Restore a fresh game root and clear search state, reusing allocations."""
+    u.position[:] = root[:]
+    u.position[0] = root[0][:]
+    u.op_mode = 1 if book else 0
+    u.op_ind = _OP_IND
+    u.last_mv = -1
+    u.ply = 0
+    u.eg = 0
+
+    # BASE_SEED may have changed after import (deterministic launcher/bench).
+    u.hash_board()
+    u.history.clear()
+    u.history.append(u.position[5])
+    clear_search_state()
+
+def reset_new_game():
+    """Reset UCI cache plus engine-owned game/search state."""
+    global hist, last_startpos_moves, last_startpos_count
+
+    last_startpos_moves = None
+    last_startpos_count = 0
+    reset_game(startpos, own_book)
+    hist = [cp_pos(u.position)]
 
 
 def send_info(depth, score, move_code):
@@ -249,6 +330,121 @@ def send_info(depth, score, move_code):
     )
 
 
+# Deterministic benchmark settings. BASE_SEED == 0 also disables the small
+# random shuffle between otherwise equally ordered moves in gen_moves().
+_BENCH_SEED = const(0)
+_BENCH1_NODES = const(64000)
+_BENCH2_DEPTH = const(8)
+
+
+def prepare_bench():
+    """Prepare the current root for a deterministic, search-independent bench."""
+    global hist
+
+    if u.ply == 0:
+        hist = [startpos]
+        reset_pos()
+
+    u.position[:] = hist[-1][:]
+    u.position[0] = hist[-1][0][:]
+    seed(_BENCH_SEED)
+    u.BASE_SEED = _BENCH_SEED
+    u.op_mode = 0
+    u.hash_board()
+    clear_search_state(True)
+
+
+def run_bench1():
+    """Deterministic node-budget benchmark using the normal latest-best policy."""
+    global start, best_move, wc_bc_ep_kp
+
+    prepare_bench()
+    start = monotonic()
+    best_move = 0
+    best_move_code = 0
+    curr_score = u.position[3]
+    wc_bc_ep_kp = u.position[2]
+
+    # Same nominal node target used by the old LEVEL=10 bench. bound() retains
+    # its 1.5x emergency ceiling; bench1 simply keeps the latest valid fail-high.
+    u.max_nodes = _BENCH1_NODES
+
+    gmv = u.g_mv()
+    gm = [m & 0x3FFF for m in gmv]
+    if len(gmv) == 1:
+        best_move_code = gmv[0] & 0x3FFF
+        send_info(0, curr_score, best_move_code)
+        send("bestmove", render_mv(best_move_code, wc_bc_ep_kp >> 20))
+        print("Bench1 time:", (monotonic() - start) / 1000)
+        return
+
+    depth = 0
+    for depth, gamma, score, mv in u.search(gmv):
+        if score >= gamma and mv:
+            best_move_code = mv
+            curr_score = score
+            send_info(depth, score, mv)
+        if (
+            (u.nodes > _BENCH1_NODES and curr_score > 0)
+            or score == _MT_LW and depth >= 7
+            or 10 * u.nodes > 15 * _BENCH1_NODES
+        ):
+            break
+
+    if best_move_code == 0 or best_move_code not in gm:
+        if gm:
+            best_move_code = gm[-1]
+
+    send_info(depth, curr_score, best_move_code)
+    send("bestmove", render_mv(best_move_code, wc_bc_ep_kp >> 20) if best_move_code & 0x3F3F else "(none)")
+    print("Bench1 time:", (monotonic() - start) / 1000)
+
+
+def run_bench2(target_depth):
+    """Run the normal search through exactly target_depth, without time cutoff."""
+    global start, best_move, wc_bc_ep_kp
+
+    if target_depth < 1 or target_depth > 20:
+        send("info string bench2 depth must be between 1 and", 20)
+        return
+
+    prepare_bench()
+    start = monotonic()
+    best_move = 0
+    best_move_code = 0
+    curr_score = u.position[3]
+    wc_bc_ep_kp = u.position[2]
+
+    # Keep the normal emergency node watchdog effectively out of the way.
+    u.max_nodes = 100000000
+    u.max_time = None
+    u.soft_time = None
+
+    gmv = u.g_mv()
+    gm = [m & 0x3FFF for m in gmv]
+    if len(gmv) == 1:
+        best_move_code = gmv[0] & 0x3FFF
+        send_info(0, curr_score, best_move_code)
+        send("bestmove", render_mv(best_move_code, wc_bc_ep_kp >> 20))
+        print("Bench2 time:", (monotonic() - start) / 1000)
+        return
+
+    depth = 0
+    for depth, gamma, score, mv in u.search(gmv, target_depth):
+        if score >= gamma and mv:
+            best_move_code = mv
+            curr_score = score
+            send_info(depth, score, mv)
+
+    if best_move_code == 0 or best_move_code not in gm:
+        if gm:
+            best_move_code = gm[-1]
+
+    send_info(depth, curr_score, best_move_code)
+    send("bestmove", render_mv(best_move_code, wc_bc_ep_kp >> 20) if best_move_code & 0x3F3F else "(none)")
+    print("Bench2 time:", (monotonic() - start) / 1000)
+
+
 
 if platform in ("win32", "linux"):
     u.T_SLOTS = 256
@@ -261,6 +457,8 @@ if hasattr(sys, "pypy_version_info"):
 
 
 own_book = True
+reset_new_game()
+
 while True:
     line = sys.stdin.readline()
     if not line:
@@ -288,11 +486,16 @@ while True:
     elif args[0] == "quit":
         break
 
+    elif args[0] == "ucinewgame":
+        reset_new_game()
+
     elif args[0:5] == ["setoption", "name", "Skill", "Level", "value"]:
         LEVEL = int(args[5])
 
     elif args[0:4] == ["setoption", "name", "OwnBook", "value"]:
         own_book = True if args[4].lower() == "true" else False
+        last_startpos_moves = None
+        last_startpos_count = 0
 
     elif args[0:4] == ["setoption", "name", "UCI_LimitStrength", "value"]:
         limit_strength = True if args[4].lower() == "true" else False
@@ -304,25 +507,41 @@ while True:
             recalc_tp()
 
     elif args[:2] == ["position", "startpos"]:
-        hist = [startpos]
-        reset_pos()
-        for mv in args[3:]:
-            move_code = parse_move(mv, 1 - (u.position[2] >> 20))
+        # UCI normally sends the complete move list every turn. Replaying the
+        # whole game is needlessly expensive on MicroPython. Use the fast path
+        # only when the previous list is an exact prefix; takebacks, branching,
+        # and the first position command fall back to the original full replay.
+        move_start = 3 if len(args) > 2 and args[2] == "moves" else len(args)
+        move_count = len(args) - move_start
+        new_startpos_moves = " ".join(args[move_start:])
 
-            u.mk_mv(move_code)
-            # print(u.position[5])
-            hist.append(
-                (
-                    u.position[0][:],
-                    u.position[1],
-                    u.position[2],
-                    u.position[3],
-                    u.position[4],
-                    u.position[5],
-                )
-            )
+        if startpos_is_extension(new_startpos_moves) and move_count >= last_startpos_count:
+            # Search may leave u.position sharing hist[-1]'s board. Detach it
+            # before mk_mv() so the cached historical position stays immutable.
+            u.position[:] = hist[-1][:]
+            u.position[0] = hist[-1][0][:]
+            for i in range(last_startpos_count, move_count):
+                mv = args[move_start + i]
+                move_code = parse_move(mv, 1 - (u.position[2] >> 20))
+                u.mk_mv(move_code)
+                append_hist()
+        else:
+            hist = [startpos]
+            reset_pos()
+            for i in range(move_count):
+                mv = args[move_start + i]
+                move_code = parse_move(mv, 1 - (u.position[2] >> 20))
+                u.mk_mv(move_code)
+                append_hist()
+
+        last_startpos_moves = new_startpos_moves
+        last_startpos_count = move_count
 
     elif args[:2] == ["position", "fen"]:
+        # A FEN switches to a different base position, so a later startpos
+        # command must rebuild rather than extending this state.
+        last_startpos_moves = None
+        last_startpos_count = 0
         u.op_mode = 0
         u.eg = 0
         u.max_qs = _MAX_QS
@@ -340,7 +559,16 @@ while True:
     elif args[:2] == ["go", "perft"]:
         perft(int(args[2]))
 
-    elif args[0] == "go" or args[0] == "bench":
+    elif args[0] == "bench1":
+        run_bench1()
+        sys.exit()
+
+    elif args[0] == "bench2":
+        depth = int(args[1]) if len(args) > 1 else _BENCH2_DEPTH
+        run_bench2(depth)
+        sys.exit()
+
+    elif args[0] == "go":
         if u.ply == 0:
             hist = [startpos]
             reset_pos()
@@ -352,18 +580,6 @@ while True:
         board, ksq, wc_bc_ep_kp, pscore, mob, h = hist[-1]
         turn = "b" if wc_bc_ep_kp >> 20 else "w"
         board = board[:]
-
-        if args[0] == "bench":
-            LEVEL = 10
-            seed(0)
-            u.BASE_SEED = 0
-            u.op_mode = 0
-            limit_strength = True
-            state[f"{turn}time"] = 6000000
-            state["infinite"] = False
-            u.T_SLOTS = 16
-            recalc_tp()            
-            start = monotonic()
 
         gmv = u.g_mv()
         gm = [m & 0x3FFF for m in gmv]
@@ -378,6 +594,7 @@ while True:
             send("bestmove", best_move)
             continue
 
+        u.soft_time = None
         time_left = state[f"{turn}time"]
         if time_left is None:
             time_left = state["movetime"] or 30000
@@ -392,7 +609,7 @@ while True:
                     if time_left < 10000:
                         mtg = 10
                     elif u.eg:
-                        mtg = 20
+                        mtg = 40-12*u.eg
                     elif u.ply < 20:
                         mtg = 50
                     else:
@@ -401,27 +618,30 @@ while True:
                     time_left // mtg + state[f"{turn}inc"] * 8 // 10, time_left // 4
                 )
                 max_time = start + inc * 8 // 10
+                u.soft_time = max_time
                 u.max_time = start + inc * 15 // 10
-
+        curr_score = u.position[3]
+        depth = 0
         for depth, gamma, score, mv in u.search(gmv):
+            # Keep every valid fail-high move immediately. If the hard watchdog
+            # interrupts this depth, the latest known best move is still used.
             if score >= gamma and mv:
                 best_move_code = mv
                 send_info(depth, score, mv)
+                curr_score = score
             if (
                 (lvl == -1 and (best_move_code or u.nodes > 125))
-                or (lvl > -1 and u.nodes > 125 * (1 << lvl))
+                or (lvl > -1 and u.nodes > 125 * (1 << lvl) and curr_score > 0)
                 or (score == _MT_LW and depth >= 7)
-                or (u.max_time and (monotonic() - max_time) > 0)
+                or (10 * u.nodes > 15 * u.max_nodes)
             ):
                 break
 
+        u.soft_time = None
         if best_move_code == 0 or best_move_code not in gm:
             if gm:
                 gm = [m & 0x3FFF for m in gmv]
                 best_move_code = gm[-1]
         
-        send_info(depth, score, best_move_code)
-        send("bestmove", best_move if best_move_code & 0x3F3F != 0 else "(none)")
-        if args[0] == "bench":
-            print("Total time:", (monotonic() - start)/1000)
-            sys.exit()
+        send_info(depth, curr_score, best_move_code)
+        send("bestmove", render_mv(best_move_code, wc_bc_ep_kp >> 20) if best_move_code & 0x3F3F else "(none)")

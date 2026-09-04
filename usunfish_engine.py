@@ -6,16 +6,15 @@ seed(monotonic())
 
 import gc
 from usunfish_common import *
-import usunfish_gmv
 from usunfish_gmv import parse_sibl, makes_check, gen_moves, value
 import usunfish_gmv as ugmv
 
 gc.collect()
 
 BASE_SEED = randint(0, 0x3FFFFFFF)
-# initial bytes of the opening tables
-_OP_IND2 = const(0)
-_OP_IND = const(0)
+# Root indices of the opening table.
+_OP_IND = 1 if op[0]>>4==0 else 0
+_VARIATIONS = 8
 # Maximum number of moves to keep in the history
 _MAX_HIST = const(10)
 # Memory allocation for the move buffer
@@ -24,7 +23,7 @@ history = list()
 ###############################################################################
 # Global constants
 ###############################################################################
-# in micropython, const makes the variable a constant, saving memory
+# On micropython, const makes the variable a constant, saving memory
 # By prepending an underscore to the variable name saves a little bit more memory
 # https://docs.micropython.org/en/latest/develop/optimizations.html
 
@@ -53,28 +52,35 @@ _CANCEL = const(16384)
 _NCANCEL = const(0)
 # Constants for tuning search
 _QS = const(16)
+_RFP = const(180)
 _QS_A = const(38)
-_FUT = const(10)
+# Fixed target margin used by the deep null-move fuel probe (about two pawns).
+_NULL_MARGIN = const(-50)
+_LMR_AFTER = const(4)
 _EVAL_ROUGHNESS = const(4)
+_ASP = const(16)
 _MAX_DEPTH = const(20)
 # limit depth for quiescence search
 _MAX_QS = const(8)
-PVALUES = b"\x00\x03\x03\x05\x09\x00\x00"
 
 max_qs = _MAX_QS
 max_nodes = 8000
 max_time = None
+soft_time = None
+# Set by search() when bound() aborts a depth because of the hard node/time
+# watchdog. UCI uses this to distinguish cancellation from a clean return
+# after a fully converged iterative-deepening depth.
+search_cancelled = False
 # killer heuristic table
 t_kll = [0] * (_MAX_DEPTH)
 
-# Transposition tables
-# with a replacement strategy based on age
-# useful for the hash move
+# Transposition table, split into T_SLOTS buckets. Entries are replaced using
+# depth/age information and provide both bounds and hash moves.
 _T_SZS = const(128)
 T_SLOTS = 16
 t_szs = [0] * T_SLOTS
 tp_scoreh = [[0] * _T_SZS for _ in range(T_SLOTS)]
-# preallocate the score table
+# Preallocate packed move/score entries for each bucket.
 tp_scored = [[0] * (_T_SZS * 2) for _ in range(T_SLOTS)]
 max_d_sc = [0] * T_SLOTS
 nodes = 0
@@ -94,7 +100,7 @@ eg = 0  # whether we are in end game mode or not (switch psts in end game)
 # There is no padding, so this diverges from the original sunfish implementation
 # each integer is a piece, even numbers for white pieces, odd numbers for black pieces
 # The space is 6 or 14 indistinctly (6 when it's white's turn, 14 when it's black's turn)
-# The initial board state, encoded in base64 to save space
+# The initial board state
 # fmt: off
 position = [
     [11, 9, 10, 12, 13, 10, 9, 11,  # board
@@ -165,9 +171,9 @@ def hash_board():
     if turn:
         for i, p in enumerate(board):
             if p & 7 < 6:
-                # piece colors are inverted
+                # Convert the rotated internal piece code back to canonical color.
                 p ^= 8
-                # board is inverted for black to move
+                # Convert the rotated square back to canonical orientation.
                 h ^= hash_piece(p, 63 ^ i, base_seed)
         h = -h
     else:
@@ -267,7 +273,7 @@ def move(mv, val, pos):
     else:
         ii, jj, pc = i, j, p
 
-    # Copy variables
+    # Unpack castling rights, en-passant square and king-pass square.
     wc, bc, ep, kp = (
         (wc_bc_ep_kp >> 18) & 3,
         (wc_bc_ep_kp >> 16) & 3,
@@ -281,7 +287,7 @@ def move(mv, val, pos):
     t = pp 
     tpst=pst[eg]
     val = value(tpst, i, j, prom, p, q, xor, eg, kp, ep, t) if val is None else (val)
-    # reset ep and kp
+    # En-passant and castling king-pass state normally expire after one move.
     ep, kp = 128, 128
     score = pscore + val
     # Actual move
@@ -293,7 +299,8 @@ def move(mv, val, pos):
     h ^= hash_piece(pc, ii, base_seed)
     # Castling rights, we move the rook or capture the opponent's
     wc = wc & 1 if i == _A1 else wc & 2 if i == _H1 else wc
-    # Black castling rights are inverted
+    # Update the opponent's castling rights when its rook is captured; because
+    # the board is side-to-move oriented, the A/H bit mapping is reversed.
     bc = bc & 2 if j == _A8 else bc & 1 if j == _H8 else bc
     # Castling
     if p == _K:
@@ -334,7 +341,7 @@ def move(mv, val, pos):
 
     # We rotate the returned position, so it's ready for the next player
     rotate_and_set(score, wc, bc, ep, kp, turn, False, mob)
-    # xor in the state
+    # Replace the old castling/en-passant state contribution in the hash with XOR.
     h ^= hash_state_swap(wc_bc_ep_kp, pos[2], turn, base_seed)
     turn ^= 1
     pos[5] = -h if turn else h
@@ -367,6 +374,7 @@ def s_hmv(h_mv, h_va, mv, max_h_mv, w):
         if max_h_mv < len(h_va):
             i = max_h_mv
             max_h_mv += 1  # use next free slot
+            h_va[i] = 0
         else:
             # replace least-used slot (single pass)
             min_i = 0
@@ -471,7 +479,7 @@ def s_tp(h, mv, best, dr, val, od, fh, mob, incheck):
 
     if not fh:
         mv = mv & 0xFFFFC000  # set the move to 0, keeping the mobility
-    # store the move and the original move only if od>sod
+    # Replace the entry only when this search is at least as deep as the stored one.
     if od >= sod:
         tscd[i << 1] = mv
         tscd[(i << 1) + 1] = e
@@ -499,7 +507,6 @@ def g_kll(pdpth):
         kll[0] = kll0 & 0x3FFF  # latest stored is 0
         kll[1] = kll0 >> 16
     return kll
-
 
 # hits = [dict(),dict(),dict(),dict()]
 # hits_i = [dict(),dict(),dict(),dict()]
@@ -538,18 +545,17 @@ def g_sc(h, dr, od, board):
     # sd = (e >> 16) & 0xF
     sod = ((e >> 20) & 0x1F) - 16
 
-    # try to prevent hash collision
-    # by checking if the move starts with a white piece
-    # and does not end with a white piece
+    # Cheap collision/stale-move guard: a stored move must start on one of our
+    # pieces, must not land on one of our pieces, and a pawn must move forward.
 
-    if (
+    if mv and (
         (board[mv >> 8] > 5)
         or (board[mv & 63] < 6)
         or (board[mv >> 8] == _P and (mv >> 8) < (mv & 63))
     ):
         return 0, _MT_UP, 0, 0, 0
-    # We need to be sure, that the stored search for the score was over the same
-    # nodes as the current search, so the evaluation depth has to be the same or greater
+    # A stored bound is usable only if it was searched to at least the requested
+    # remaining depth; otherwise retain only its move/mobility information.
     if sod < od:
         return mv, -_MT_UP, 0x8000, -1, incheck
     fh = e & 0x8000
@@ -604,12 +610,8 @@ def bound(
         The while is just to be able to break
         """
 
-        # Sunfish is a king-capture engine, so we should always check if we
-        # still have a king. Notice since this is the only termination check,
-        # the remaining code has to be comfortable with being mated, stalemated
-        # or able to capture the opponent king.
-        # If the move ends with a king capture, we can stop the search
-        # and return the mate score
+        # uSunfish uses king-capture legality internally. If the previous move
+        # exposed/captured the king, return the mate bound immediately.
         if makes_check(ksq >> 8, 0, pos):
             ret, best = 1, _MT_UP
             break
@@ -625,7 +627,7 @@ def bound(
 
         nodes += 1
         # kill switch if we are 50% more than the allowed nodes or after max_time
-        if 10 * nodes > 15 * max_nodes or (max_time and (monotonic() - max_time) > 0):
+        if  10 * nodes > 15 * max_nodes or (not (nodes%5) and (max_time and (monotonic() - max_time) > 0)):
             ret, best = 1, _CANCEL
             break
 
@@ -649,6 +651,7 @@ def bound(
             # negative match means only mobility and incheck
             if match > 0:
                 ohmove = hmove
+                hbest = e
             mb = ((pos[4] + 2) >> 2) - mob + 1
         else:
             mb = 1  # turn bonus
@@ -672,17 +675,35 @@ def bound(
         elif makes_check(ksq & 0xFF, 0x08, pos):
             incheck = incheck | 4
 
-        # if we reached the maximum depth in quiescent search and not in check, return the score
-        if od < -mqs and not incheck & 4:
-            ret, best = 1, sc + mb
-            break
+        # Child-node quiet-move futility for d=1..2. The move has already been
+        # made, so we can cheaply exclude captures, promotions and checking moves.
+        # The pdpth guard keeps this pruning away from the root.
+        if (
+            not incheck & 4
+            and cn
+            and omv
+            and 0 < d < 3
+            and pdpth > 1+d
+            and (dif & 7) == 6
+            and (((dif >> 4) & 7) != _P or (omv & 63) > 7)
+        ):
+            mgn = abs(val) 
+            if mgn < 2: mgn = 2
+            mgn += (eg==1)*2 + (pdpth==2)*2
+            # In child coordinates, a sufficiently high static score proves the
+            # parent's quiet move futile without generating another move list.
+            if sc - (mgn << 2) * (d + 1 ) >= g:
+                ret, best = 1, sc
+                break
 
-        # Pre-generation deep futility pruning.
-        # gen_moves() is expensive because it also computes mobility/eval terms.
-        # If we are far below gamma even after a queen-sized margin,
-        # skip move generation at medium depths outside checks.
-        # if  (not incheck&5 and d > 2 and d<7 and pdpth>2 and
-        #                 ((sc + mb + PC_VAL[4] )) < g ) :
+        # Reverse futility at d=2 only, before move generation. If the static
+        # score is at least 180 above gamma, return it as a lower bound.
+        # if not incheck & 4 and cn and d == 2 and pdpth > 2 and sc + mb - _RFP >= g:
+        #     ret, best = 1, sc + mb
+        #     break
+
+        # if (not incheck & 5 and d > 2 and d < 7 and pdpth > 2 and
+        #                 sc + mb + PC_VAL[4] < g):
         #     ret, best = 1, sc + mb
         #     break
 
@@ -693,39 +714,51 @@ def bound(
     if not ret:
         # Run through the moves, shortcutting when possible
         while True:
-            # First we try not moving at all. We only do this if there is at least one major
-            # piece left on the board, since otherwise zugzwangs are too dangerous.
-            # FIXME: We also can't null move if we can capture the opponent king.
-            # Since if we do, we won't spot illegal moves that could lead to stalemate.
-            # For now we just solve this by not using null-move in very unbalanced positions.
-            # TODO: We could actually use null-move in QS as well. Not sure it would be very useful.
-            # But still.... We just have to move stand-pat to be before null-move.
-            # if depth > 2 and can_null and any(c in pos.board for c in "RBNQ"):
-            # if depth > 2 and can_null and any(c in pos.board for c in "RBNQ") and abs(pos.score) < 500:
-            if (
+            # First we try not moving at all (Null move)
+            # Null move is allowed only in non-check main-search positions with a
+            # non-pawn piece, moderate static imbalance, and at least one ply from
+            # the root. The material guard reduces zugzwang and extreme-position risk.
+            null_red = 0
+            null_ok = (
                 not incheck
                 and d > 2
                 and cn
                 and abs(sc) < 125
                 and any(0 < (p & 7) < 5 for p in board if not (p & 8))
                 and pdpth > 0
-            ):
+            )
+            if null_ok and d < 8 :
+                # Conventional null-move pruning for d=3..7: a fail-high cuts.
                 lwc = wc_bc_ep_kp
                 rotate(True)
-                res = bound(pos, 1-g, d-3 , False, 0, mb, gm, ind, gmv, incheck, pdpth+1, gm_buf, req_d, max_time) # fmt: skip
+                res = bound(pos, 1-g, d-4 if (d>3 and eg!=1) else d-3 , False, 0, mb, gm, ind, gmv, incheck, pdpth+1, gm_buf, req_d, max_time) # fmt: skip
                 rotate()
-                res = -((res & 0xFFFF) - 16384)
                 pos[2] = lwc
+                if res == _NCANCEL:
+                    best = _CANCEL
+                    break
+                res = -((res & 0xFFFF) - 16384)
                 best = res if res > best else best
                 if res >= g:
                     best_mv = 0
                     break
                 if not match:
                     mob = (pos[4] + 2) >> 2
-
-            # Increase the quiescent search depth if in-check and in first iteration
-            # if (incheck&4 or (req_d == 1)) and mqs < 2*_MAX_QS:
-            #     max_qs += 1
+            elif null_ok:
+                # At d>=8, use null move only as a fixed-target "fuel" probe.
+                # It cannot cut off directly; success grants a one-ply reduction
+                # to subsequent real moves.
+                lwc = wc_bc_ep_kp
+                rotate(True)
+                target = sc + mb + _NULL_MARGIN
+                res = bound(pos, 1-target, max(0, d-7), False, 0, mb, gm, ind, gmv, incheck, pdpth+1, gm_buf, req_d, max_time) # fmt: skip
+                rotate()
+                res = -((res & 0xFFFF) - 16384)
+                pos[2] = lwc
+                if res >= sc + mb + (_NULL_MARGIN):
+                    null_red = 1
+                if not match:
+                    mob = (pos[4] + 2) >> 2
 
             if d == 0 and not incheck & 4:
                 best = sc + mb if sc + mb > best else best
@@ -734,24 +767,29 @@ def bound(
                 if sc + mb >= g:
                     best_mv = 0
                     break
-            # Is there is no killer move in the kpv
+            # Is there is no hash move in the tt
             # try to find one with a more shallow search.
             # This is known as Internal Iterative Deepening (IID).
             # can_null=False, since we want to make sure we actually find a move.
             if not hmove and d > 2:
-                hmove = bound(pos, g, d - 2, False, 0, 0, gm, ind, gmv, incheck, pdpth, gm_buf, req_d, max_time) # fmt: skip
-                hmove = hmove >> 16
+                iid = bound(pos, g, min(d - 2, 5), False, 0, 0, gm, ind, gmv, incheck, pdpth, gm_buf, req_d, max_time) # fmt: skip
+                if iid == _NCANCEL:
+                    best = _CANCEL
+                    break
+                hmove = iid >> 16
 
             # If depth == 0 we only try moves with high intrinsic score (captures and
             # promotions). Otherwise we do all moves. This is called quiescent search.
             # If in check or moving out of check, we increase the range.
             val_lower = _QS - (d + (int(incheck > 0) << 2)) * _QS_A
 
-            # Check extension
+            # Checking positions get a one-ply extension; otherwise inherit any
+            # one-ply reduction granted by the deep-null fuel probe.
             if incheck & 4:
                 red = -1
             else:
-                red = 0
+                red = null_red
+
             # Only play the move if it would be included at the current val-limit,
             # since otherwise we'd get search instability.
             # We will skip the hash-move in the main loop below
@@ -771,19 +809,24 @@ def bound(
                 # fmt: on
                 if val >= val_lower:
                     res = bound(pos, 1-g, od-1-red, True, hmove, val+mb, gm, ind, None, incheck, pdpth+1, gm_buf, req_d, max_time) # fmt: skip
+                    if res == _NCANCEL:
+                        best = _CANCEL
+                        break
                     res = -((res & 0xFFFF)-16384)
                     best = res if res > best else best
                     if res >= g:
                         best_mv = hmove
                         break
                     if incheck & 4 or (match > 0 and res > hbest + 4):
-                        # look at previous moves only if the new mobility is at least 4 points greater than the stored one
+                        # If the fresh search disagrees materially with the cached
+                        # mobility/score, stop trusting the exact-entry shortcut.
                         # (simple heuristic that seems to work)
                         match = 0
                 else:
                     match = 0
             else:
-                # look at previous moves
+                # Without a usable hash move, do not restrict the generated moves
+                # to the move stored by an exact TT entry.
                 match = 0
 
             if gmv:
@@ -793,16 +836,19 @@ def bound(
                 gm = gm_buf
             else:
                 l = gen_moves(gm, ind, pos, val_lower, g_kll(pdpth), h_va[turn], max_h_mv[turn], h_mv[turn], eg, op_mode, BASE_SEED, d)  # fmt: skip
+                if ugmv.draw:
+                    best_mv = 0
+                    best = 0
+                    break
             if omv == 0:
                 omb = pos[4]
                 mb = 1
             else:
                 mb = ((pos[4] + 2) >> 2) - mob + 1
 
-            # Then all the other moves in the position. We sort them by the value
-            # and we take them in reverse order to get the best ones first. We also
-            # skip the move if it's the killer move, since we already tried that one.
-            # the ones that are below the val_lower limit (Quiescent Search) are already filtered out.
+            # Then all the other moves in the position in descending move-order score.
+            # Skip the hash move because it was already searched above; in quiescence,
+            # gen_moves() has already filtered moves below val_lower.
             lmax = l
             while l:
                 l -= 1
@@ -829,18 +875,17 @@ def bound(
                     best = res if res > best else best
                     break  # inner while
 
-                # Futility pruning (non-qsearch)
-                # Only when not in check and not in qsearch
-                # If static score is already far below gamma and ply is above 2, accept it
+                # Main-search quiet-move futility for d=3..7. If this ordered quiet
+                # move cannot plausibly reach gamma, later quiet moves are skipped too.
                 j = best_mv & 63
                 i = best_mv >> 8
 
                 if not (incheck & 4) and omv and od < -_MAX_QS + 2 and j != 63 - (omv & 63):
                     continue
 
-                red = -1 if incheck & 4 else 0  # check extension
+                red = -1 if incheck & 4 else null_red  # check extension / deep-null fuel
 
-                if ( not red and
+                if ( not (incheck & 4) and
                     (j > 7 or board[i] != _P)
                     and board[j] & 7 == 6
                     and (
@@ -853,20 +898,28 @@ def bound(
                     best = res if res > best else best
                     break
 
-                # Simple Late Move Reductions (LMR)
+                # Simple Late Move Reductions (LMR). Deep-null red=1 does not
+                # stack with LMR; keep whichever reduction is larger.
                 if (
-                    not red
-                    and (lmax - l > 4 and d > 3 and pdpth > 0)
+                    not (incheck & 4)
+                    and (lmax - l > _LMR_AFTER  and d > 3 and d < 10 - (eg == 1) and pdpth > 0)
                 ):
                     if val > 0 or (board[j] & 7) != 6:
-                        red = 1
+                        lmr_red = 1
                     else:
-                        red = 1 + d // 4 
+                        lmr_red = 1 + d // 4
+                    red = lmr_red if lmr_red > red else red
                 res = bound(pos, 1-g, od-1-red, True, best_mv, val + mb, gm, ind+l, None, incheck, pdpth+1, gm_buf, req_d, max_time) # fmt: skip
+                if res == _NCANCEL:
+                    best = _CANCEL
+                    break
                 res = -((res & 0xFFFF)-16384)
-                if red>0 and res >= g + 5:
-                    # full depth re-search
+                if red > 0 and res >= g + 5:
+                    # A reduced fail-high with margin is verified at full depth.
                     res = bound(pos, 1-g, od-1, True, best_mv, val + mb, gm, ind+l, None, incheck, pdpth+1, gm_buf, req_d, max_time) # fmt: skip
+                    if res == _NCANCEL:
+                        best = _CANCEL
+                        break
                     res = -((res & 0xFFFF)-16384) 
 
                 best = res if res > best else best
@@ -901,7 +954,7 @@ def bound(
         # when the score is better than the gamma so that moves and scores can be stored in the
         # same table. Also when invalidating a previously fh move
 
-        if best >= g and (16 > od >= -16 and (best_mv != 0)) and (cn or pdpth == 0) and pdpth < 16:
+        if best != _CANCEL and best >= g and (16 > od >= -16 and (best_mv != 0)) and (cn or pdpth == 0) and pdpth < 16:
             s_tp(h, best_mv, best, pdpth, val, od, 0x8000, (pos[4] + 2) >> 2, incheck)
         if best < g and not best_mv and fh and hmove and (16 > od >= -16) and pdpth < 16:
             s_tp(h, hmove, best, pdpth, val, od, 0, (pos[4] + 2) >> 2, incheck)
@@ -912,7 +965,6 @@ def bound(
     reset_pos(omv, osc, lwc_bc_ep_kp, dif, omb, oh)
     if best == _CANCEL:
         return _NCANCEL
-    # ic(-best,best_mv)
 
     return (best + 16384) | (best_mv << 16)
 
@@ -939,16 +991,6 @@ def mk_mv(mv):
             op_ind = mvs[i[0]][1]
         else:
             op_mode = 0
-            if ply == 1:
-                # check if the last move
-                # is in the list of next moves of the opening
-                mvs, _ = parse_sibl(_OP_IND2, ply - 1, op2)
-                i = [i for i, (mv, _) in enumerate(mvs) if mv == last_mv]
-                if i:
-                    # if it is in the list, update the next move index
-                    # to the first child of the move
-                    op_ind = mvs[i[0]][1]
-                    op_mode = 2
 
     if len(history) > _MAX_HIST:
         history.pop(0)
@@ -965,21 +1007,25 @@ def g_next_move(op):
     if not mvs:
         op_mode = 0
         return 0
-    mv, _ = mvs[randint(0, len(mvs) - 1)]
+    if ply == 0:
+        mv, _ = mvs[randint(0, _VARIATIONS -1)]
+    else:
+        mv, _ = mvs[randint(0, len(mvs) - 1)]
     gm = g_m()
 
     mv = gm[-mv - 1] & 0x3FFF
     return mv
 
 
-def search(gmv):
-    """Iterative deepening MTD-bi search"""
+def search(gmv, depth_limit=0):
+    """Iterative deepening MTD-bi search, optionally capped at depth_limit."""
     global nodes, req_d, tp_scored, tp_scoreh, max_d_sc, t_szs, op_ind, iter
-    global eg, max_qs, req_d, start_time
+    global eg, max_qs, req_d, start_time, soft_time, search_cancelled
 
     
 
     nodes = 0
+    search_cancelled = False
     if not gmv:
         gmv = g_mv()
     _, _, _, pscore, mob, _ = position        
@@ -1000,9 +1046,11 @@ def search(gmv):
     guess = pscore + ((mob+2)>>2) + 1
 
     iter = 0
-    eval_roughness =  _EVAL_ROUGHNESS-1    
-    for req_d in range(1, _MAX_DEPTH+1):
-        margin = 16 + max(0, req_d-4)*4
+    eval_roughness =  _EVAL_ROUGHNESS-1
+    last_probe_time = 0
+    max_depth = depth_limit if depth_limit else _MAX_DEPTH
+    for req_d in range(1, max_depth + 1):
+        margin = _ASP + max(0, req_d-4)*4
         lower = guess - margin
         upper = guess + margin
         if lower < -_MT_LW: lower = -_MT_LW
@@ -1011,11 +1059,24 @@ def search(gmv):
         widened = False
 
         eval_dist = upper - lower
+        first_probe = True
         while eval_dist > eval_roughness:
+            # Predict each MTD probe before starting it.  A new depth is
+            # allowed 1.5x the previous probe's cost; later probes at the
+            # same depth use a 1.0x estimate.  Once a probe starts, only the
+            # hard watchdog may interrupt it.
+            probe_start = monotonic()
+            if soft_time and last_probe_time:
+                predicted = (last_probe_time * 2) if first_probe else last_probe_time * 3 // 2
+                if probe_start + predicted >= soft_time:
+                    return
+
             res = bound(position, g, req_d, False, 0, 0,
                         gm_buf, 0, gmv, 0, 0, gm_buf, req_d, max_time)
+            last_probe_time = monotonic() - probe_start
 
             if res == _NCANCEL:
+                search_cancelled = True
                 yield req_d, g, _NCANCEL, 0
                 return
 
@@ -1036,14 +1097,14 @@ def search(gmv):
             yield req_d, g, score, best_mv
             g = (lower + upper + 1) // 2
             iter = (iter + 1)&31
-
+            first_probe = False
 
         guess = (lower + upper + 1) // 2
         depth_roughness = _EVAL_ROUGHNESS + max(0, req_d -4 ) // 4
         eval_roughness = depth_roughness
         if eval_roughness > 6:
-            eval_roughness = 6     
-        
+            eval_roughness = 6
+
 
 
 def g_m():
@@ -1115,13 +1176,12 @@ def g_mv():
         gm = g_m()
         gm = [m for m in gm if not can_kill_king(m & 0x3FFF)]
     else:
-        # reuse heuristics from previous move
+        # Shift killer entries so their indices remain aligned with the new root.
         t_kll[:-2] = t_kll[2:]
         t_kll[-2:] = [0, 0]
 
-        # reuse history heuristics from previous move
-        # include only possible moves from current position
-        # for both sides
+        # Reuse history heuristics across moves, but retain only moves that are
+        # still legal/relevant for each side and decay their weights.
         lwc_bc_ep_kp = wc_bc_ep_kp
         nullmove = True
         for _ in range(2):
@@ -1143,7 +1203,7 @@ def g_mv():
                         i += 1
             max_h_mv[turn] = i
         pos[2] = lwc_bc_ep_kp
-        # put the previous PV at the beginning
+        # Preserve the reachable previous PV at the front of the rebuilt TT.
         d = recalc_tp(0, ts)
     for i in range(T_SLOTS):
         max_d_sc[i] = d
@@ -1153,13 +1213,12 @@ def g_mv():
 
 
 def recalc_tp(d, ts):
-    # move the PV
-    # to the beginning
+    # Recursively copy the reachable old PV into the front of the new TT buckets.
     _, _, wc_bc_ep_kp, pscore, mob, h = position
     hind = (h) & (T_SLOTS - 1)
     tscd, tsch = tp_scored[hind], tp_scoreh[hind]
     try:
-        # avoid including the already inserted hashes
+        # Search only the old portion of the bucket, after entries already copied.
         i = tsch.index(h, ts[hind], t_szs[hind])
     except ValueError:
         return d
@@ -1220,7 +1279,7 @@ def can_kill_king(mv, ccheck=True):
 
 
 ###############################################################################
-# UCI User interface
+# Coordinate/move helpers used by the UCI front end
 ###############################################################################
 mapping = "PNBRQK. pnbrqk. "
 

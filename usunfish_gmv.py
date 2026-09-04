@@ -55,43 +55,53 @@ _OPN = const(5)
 _QS = 16
 # limit depth for opening book
 _MAX_OP_D = const(11)
-
+draw = False
 _buff = [0] * 9  # kingring squares and black pawns
 
-def parse_sibl(c_ind, d, op):
-    def op_get(i, op):
+def op_get(i, op):
         if i >> 1 >= len(op):
             return 0
         return (op[i >> 1] >> ((i & 1) ^ 1) * 4) & 0xF
 
+def read_node(c_ind, op):
+    first = op_get(c_ind, op)
+
+    if first < 14:
+        return first, c_ind + 1
+
+    second = op_get(c_ind + 1, op)
+
+    if second < 15:
+        # second must be 4..14 here
+        return second + 10, c_ind + 2
+
+    # [14,15,x]
+    return 25 + op_get(c_ind + 2, op), c_ind + 3
+
+def parse_sibl(c_ind, d, op):
     if d > _MAX_OP_D:
-        return [], c_ind
+        return [], c_ind    
     sibl = []
     n_sibl = op_get(c_ind, op)
     # read number of siblings
-    if n_sibl == 14 and op_get(c_ind + 1, op) < 4:
-        n_sibl = op_get(c_ind + 1, op) + 2
+    if n_sibl == 14 and op_get(c_ind + 1, op) < 3:
+        n_sibl = op_get(c_ind + 1, op)+2
         c_ind += 2
     elif n_sibl == 15:
         n_sibl = 0
         c_ind += 1
-    elif n_sibl == 14 and op_get(c_ind + 1, op) == 14 and c_ind == 0:
-        # 400 move book exception
-        n_sibl = 16
-        c_ind += 2
+    elif n_sibl == 14 and op_get(c_ind + 1, op) == 3:
+        n_sibl = op_get(c_ind + 2, op)+4
+        c_ind += 3
     else:
         n_sibl = 1
     for _ in range(n_sibl):
         # read node value
-        node = op_get(c_ind, op)
-        if node == 14 and op_get(c_ind + 1, op) > 3:
-            node = node + op_get(c_ind + 1, op) - 4
-            c_ind += 1
-        c_ind += 1
+        node, c_ind = read_node(c_ind, op)
         sibl.append((node, c_ind))
         # Recursively parse children
-        _, c_ind = parse_sibl(c_ind, d + 1, op)
-
+        _, c_ind = parse_sibl(c_ind , d+1, op)
+    
     return sibl, c_ind
 
 
@@ -167,7 +177,7 @@ def makes_check(ksq, bbit, position):
 
 
 @micropython.native
-def ma(moves, ind, mv, val, lvalue, kll, h_va, max_h_mv, h_mv, p, q, prom, empt):
+def ma(moves, ind, mv, val, lvalue, kll, h_va, max_h_mv, h_mv, p, q, prom, empt, op_mode):
     """Move sorting logic
     A virtual bonus is added to the score for sorting
     and later substracted for stability of the sunfish scoring logic
@@ -217,6 +227,8 @@ def ma(moves, ind, mv, val, lvalue, kll, h_va, max_h_mv, h_mv, p, q, prom, empt)
         order = 0
 
     if ind < len(moves) and (val >= lvalue or  order > 40):
+        if op_mode:
+            order = 0
         moves[ind] = (mv | ((val + 512) << 14)) | (order << 24)
         ind += 1
 
@@ -306,8 +318,9 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
     # For each of our pieces, iterate through each possible 'ray' of moves,
     # as defined in the 'directions' map. The rays are broken e.g. by
     # captures or immediately in case of pieces such as knights.
-
-    b, ksq, wcek, _, _, _ = pos
+    global draw 
+    draw = False
+    b, ksq, wcek, pscore, _, _ = pos
     if op_mode:
         lpst = pst[0]
     else:
@@ -341,6 +354,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
     mob_t = mob_ex[eg][0]
     RQ_files = [0, 0, 0, 0]
     P_files = [0, 0]
+    draw_material = 0
     for p in b:
         i += 1
 
@@ -348,6 +362,8 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
             continue
         bbit = p & 8  # is black piece
         pp = p & 7  # piece type
+        if eg == 2:
+            draw_material += PVALUES[pp]
         p16 = pp << 4  # piece type times 16 for mobility table
         wb = 1 if bbit else 0  # white or black to index mobility
 
@@ -377,7 +393,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                     if b[i + 9] == _P and not ppawn:
                         ppawn += 1
                 # the scan of black pawns above the current white pawn has been performed, so we caculate bonus for non-blocked pawns
-                if r < 5:
+                if r < 5 + (eg==2):
                     # passed pawn bonus from rank 3 onwards (7-5 =2 based 0 is rank)
                     # if not any( (bc>>3)<=rr and (bc&7)==f  for lst in (lbuff[24:bci], lbuff[40:bpi]) for bc in lst):
                     if (bp_files[fi]) == 0:
@@ -514,7 +530,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                         for prom in range(1, 5):  # NBRQ
                             v = value(lpst, i, j, prom, p, q, xor, eg, kp, ep, t)
                             ind = ma(gm, ind, (i << 8) | j | (
-                                (prom - 1) << 6), v, lvalue, kll, hva, mhva, hmv, p, q, prom-1, empt)
+                                (prom - 1) << 6), v, lvalue, kll, hva, mhva, hmv, p, q, prom-1, empt, op_mode)
                         break
                 elif p == _BP:
                     if df:
@@ -533,7 +549,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                 if not bbit:
                     v = value(lpst, i, j, 0, p, q, xor, eg, kp, ep, t)
                     ind = ma(gm, ind, (i << 8) | j, v, lvalue,
-                            kll, hva, mhva, hmv, p, q, 4, empt)
+                            kll, hva, mhva, hmv, p, q, 4, empt, op_mode)
 
                 # stop crawlers (P,N,K) and after any capture
                 if ((qn ^ 0x8) < 6) or pp == _P or pp == _K or pp == _N:
@@ -549,7 +565,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                     tt = _K 
                     v = value(lpst, it, jt, 0, _K, 6, xor, eg, kp, ep, tt)
                     ind = ma(gm, ind, (it << 8) | jt, v, lvalue,
-                             kll, hva, mhva, hmv, p, q, 4, empt)
+                             kll, hva, mhva, hmv, p, q, 4, empt, op_mode)
                     # break since we can't slide beyond the king
                     break
                 if i == _H1 and cke and j > 0 and b[j + _W] == _K:
@@ -558,7 +574,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                     tt = _K 
                     v = value(lpst, it, jt, 0, _K, 6, xor, eg, kp, ep, tt)
                     ind = ma(gm, ind, (it << 8) | jt, v, lvalue,
-                             kll, hva, mhva, hmv, p, q, 4, empt)
+                             kll, hva, mhva, hmv, p, q, 4, empt, op_mode)
                     # break since we can't slide beyond the king
                     break
     l = ind - l
@@ -592,7 +608,7 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                 mob[1] += mob_t[_PHLX]-99
             if b[i - 9] == _BP and not ppawn:
                 ppawn += 1
-        if r > 2:
+        if r > 2 - (eg==2):
             if f < 7:
                 if b[i - 7] == _BP:
                     ppawn += 1
@@ -610,6 +626,30 @@ def gen_moves(gm, ind, pos, lvalue, kll, hva, mhva, hmv, eg, op_mode, base_seed,
                     + (mob_t[_PPPA]-99) * ppawn
                 )  # bonus for non blocked pawns
 
+
+    # Pawnless late-endgame handling.  Reuse the same 3/3/5/9 material
+    # scale as get_phase(): K vs K and K+minor vs K are simple draws.
+    if eg == 2 and l and not (P_files[0] | P_files[1]):
+        if draw_material <= 3:
+            draw = True
+            return l
+
+        king_dist14 = (14 - abs(bkr - wkr) - abs(bkf - wkf))
+        # Raw value of the last (highest sorted) move.  Value is packed in
+        # bits 14..23 with a +512 offset; ordering bonus starts at bit 24
+        if pscore > 80:
+            mh_d = (
+                abs((bkr << 1) - 7)
+                + abs((bkf << 1) - 7) - 2
+            ) 
+            mob[0] += (mh_d * mh_d + king_dist14) >> 3
+
+        elif pscore < -80:
+            mh_d = (
+                abs((wkr << 1) - 7)
+                + abs((wkf << 1) - 7) - 2
+            ) 
+            mob[1] += (mh_d * mh_d + king_dist14) >> 3
 
     # Store the mobility in the position list
     pos[4] = mob[0] - mob[1]
