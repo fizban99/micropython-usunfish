@@ -118,9 +118,9 @@ def run_bench1():
 def run_bench2(target_depth):
 	B=target_depth;global start,best_move,wc_bc_ep_kp
 	if B<1 or B>20:send('info string bench2 depth must be between 1 and',20);return
-	prepare_bench();start=monotonic();best_move=0;A=0;G=u.position[3];wc_bc_ep_kp=u.position[2];u.max_nodes=100000000;u.max_time=None;u.soft_time=None;H=u.g_mv();C=[A&16383 for A in H];D=0;I=monotonic()
-	for(D,J,E,F)in u.search(H,B):
-		if E>=J and F:A=F;G=E;send_info(D,E,F);print(monotonic()-I);I=monotonic()
+	prepare_bench();start=monotonic();best_move=0;A=0;G=u.position[3];wc_bc_ep_kp=u.position[2];u.max_nodes=100000000;u.max_time=None;u.soft_time=None;H=u.g_mv();C=[A&16383 for A in H];D=0
+	for(D,I,E,F)in u.search(H,B):
+		if E>=I and F:A=F;G=E;send_info(D,E,F)
 	if A==0 or A not in C:
 		if C:A=C[-1]
 	send_info(D,G,A);send('bestmove',render_mv(A,wc_bc_ep_kp>>20)if A&16191 else'(none)');print('Bench2 time:',(monotonic()-start)/1000)

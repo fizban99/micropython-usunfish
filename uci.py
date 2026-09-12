@@ -416,14 +416,11 @@ def run_bench2(target_depth):
     gmv = u.g_mv()
     gm = [m & 0x3FFF for m in gmv]
     depth = 0
-    st = monotonic()
     for depth, gamma, score, mv in u.search(gmv, target_depth):
         if score >= gamma and mv:
             best_move_code = mv
             curr_score = score
             send_info(depth, score, mv)
-            print(monotonic()-st)
-            st = monotonic()
 
     if best_move_code == 0 or best_move_code not in gm:
         if gm:

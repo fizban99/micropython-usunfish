@@ -99,7 +99,7 @@ These are some technical details about the features implemented in this Sunfish-
   - Hash generation includes startup randomness, adding a bit of non-determinism.
 
 - **Compact hardcoded opening book**
-  - Original Sunfish did not include hardcoded openings. This version includes a compact nibble-encoded opening book. The main book contains about 1,768 plies derived from [`Balsa_500.pgn`](https://sites.google.com/site/computerschess/balsa-opening-test-suite) and [`Unique v110225`](https://sites.google.com/site/computerschess/unique-suite-110225).
+  - Original Sunfish did not include hardcoded openings. This version includes a compact nibble-encoded opening book. The main book contains about 1,981 plies derived from [`Balsa_500.pgn`](https://sites.google.com/site/computerschess/balsa-opening-test-suite).
   - A secondary reply book provides answers to uncommon first moves using the [`400 moves.pgn`](https://www.scacchi64.com/downloads.html) file.
 
 - **Strength control**
