@@ -159,7 +159,7 @@ If an invalid move is entered, the engine prompts the user to try again.
 
 There is also `sunfish_fancy.py`, which, if your device supports unicode, and your terminal supports unicode colors (e.g. Thonny in terminal emulation) you can get a nicer represenation:
 <p align="center">
-  <img src="./img/uSunfish_fancy.png" />
+  <img src="./img/usunfish_fancy.png" />
 </p>
 
 ## Limitations
