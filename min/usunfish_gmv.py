@@ -34,23 +34,26 @@ _KRC=const(2)
 _MBT=const(3)
 _SOPN=const(4)
 _OPN=const(5)
-_QS=16
+_QS=const(16)
 _MAX_OP_D=const(11)
 _buff=[0]*9
+def op_get(i,op):
+	if i>>1>=len(op):return 0
+	return op[i>>1]>>(i&1^1)*4&15
+def read_node(c_ind,op):
+	first=op_get(c_ind,op)
+	if first<14:return first,c_ind+1
+	second=op_get(c_ind+1,op)
+	if second<15:return second+10,c_ind+2
+	return 25+op_get(c_ind+2,op),c_ind+3
 def parse_sibl(c_ind,d,op):
-	def op_get(i,op):
-		if i>>1>=len(op):return 0
-		return op[i>>1]>>(i&1^1)*4&15
 	if d>_MAX_OP_D:return[],c_ind
 	sibl=[];n_sibl=op_get(c_ind,op)
-	if n_sibl==14 and op_get(c_ind+1,op)<4:n_sibl=op_get(c_ind+1,op)+2;c_ind+=2
+	if n_sibl==14 and op_get(c_ind+1,op)<3:n_sibl=op_get(c_ind+1,op)+2;c_ind+=2
 	elif n_sibl==15:n_sibl=0;c_ind+=1
-	elif n_sibl==14 and op_get(c_ind+1,op)==14 and c_ind==0:n_sibl=16;c_ind+=2
+	elif n_sibl==14 and op_get(c_ind+1,op)==3:n_sibl=op_get(c_ind+2,op)+4;c_ind+=3
 	else:n_sibl=1
-	for _ in range(n_sibl):
-		node=op_get(c_ind,op)
-		if node==14 and op_get(c_ind+1,op)>3:node=node+op_get(c_ind+1,op)-4;c_ind+=1
-		c_ind+=1;sibl.append((node,c_ind));_,c_ind=parse_sibl(c_ind,d+1,op)
+	for _ in range(n_sibl):node,c_ind=read_node(c_ind,op);sibl.append((node,c_ind));_,c_ind=parse_sibl(c_ind,d+1,op)
 	return sibl,c_ind
 @micropython.native
 def makes_check(ksq,bbit,position):
@@ -79,7 +82,7 @@ def makes_check(ksq,bbit,position):
 				break
 	return False
 @micropython.native
-def ma(moves,ind,mv,val,lvalue,kll,h_va,max_h_mv,h_mv,p,q,prom,empt):
+def ma(moves,ind,mv,val,lvalue,kll,h_va,max_h_mv,h_mv,p,q,prom,empt,op_mode):
 	if lvalue>=_QS and prom<3:return ind
 	if p==_P and prom<3:order=0
 	elif q!=empt or prom==3:
@@ -94,7 +97,9 @@ def ma(moves,ind,mv,val,lvalue,kll,h_va,max_h_mv,h_mv,p,q,prom,empt):
 		if i>=0:order=h_va[i]
 		else:order=0
 	else:order=0
-	if ind<len(moves)and(val>=lvalue or order>40):moves[ind]=mv|val+512<<14|order<<24;ind+=1
+	if ind<len(moves)and(val>=lvalue or order>40):
+		if op_mode:order=0
+		moves[ind]=mv|val+512<<14|order<<24;ind+=1
 	return ind
 @micropython.native
 def value(lpst,i,j,prom,p0,q,xor,eg,kp,ep,p):
@@ -121,7 +126,7 @@ def king_ring(k,buff):
 def rq_mobility(r_file,q_file,enemy_pawns,own_pawns,pf2,sop_r,sop_q,op_r,op_q,pc4=PC4):pf1=enemy_pawns&(255^own_pawns);a=r_file&pf1;b=r_file&pf2;c=q_file&pf1;d=q_file&pf2;return(pc4[a&15]+pc4[a>>4])*sop_r+(pc4[b&15]+pc4[b>>4])*op_r+(pc4[c&15]+pc4[c>>4])*sop_q+(pc4[d&15]+pc4[d>>4])*op_q
 @micropython.native
 def gen_moves(gm,ind,pos,lvalue,kll,hva,mhva,hmv,eg,op_mode,base_seed,dpth,lbuff=_buff):
-	b,ksq,wcek,_,_,_=pos
+	b,ksq,wcek,pscore,_,_=pos
 	if op_mode:lpst=pst[0]
 	else:lpst=pst[eg]
 	l=ind;ep=wcek>>8&255;kp=wcek&255;cwq=wcek>>18&2;cke=wcek>>18&1;bk=ksq>>8;wk=ksq&255;xor=wcek>>20;empt=6|xor<<3;xor=xor*7;bkr,bkf,wkr,wkf=bk>>3,bk&7,wk>>3,wk&7;bk_ring=king_ring(bk,lbuff);wk_ring=king_ring(wk,lbuff);bpi=0;wp_files=[0]*8;bp_files=[0]*8;i=-1;bshp=[0,0];mob=[0,0];attc=[0,0];att=mob_ex[eg][_ATT];krc=mob_ex[eg][_KRC];mbt=mob_ex[eg][_MBT];sopn=mob_ex[eg][_SOPN];opn=mob_ex[eg][_OPN];mob_t=mob_ex[eg][0];RQ_files=[0,0,0,0];P_files=[0,0]
@@ -149,9 +154,9 @@ def gen_moves(gm,ind,pos,lvalue,kll,hva,mhva,hmv,eg,op_mode,base_seed,dpth,lbuff
 				bshp[wb]+=1
 			elif pp==_R:RQ_files[wb]=RQ_files[wb]|1<<fi
 			elif pp==_Q:RQ_files[wb+2]=RQ_files[wb+2]|1<<fi
-		opf=0
+		opf=0;ring_attack=pp!=_P and pp!=_K;crawler=pp==_P or pp==_K or pp==_N;isrq=pp==_R or pp==_Q
 		for dn in range(0,len(dir)-1,2):
-			df=dir[dn]-2;d=dir[dn+1]-17;j=i;f=fi
+			df=dir[dn]-2;d=dir[dn+1]-17;pawn_fwd=pp==_P and(d==_NO or d==-_NO);j=i;f=fi
 			while True:
 				j+=d;f+=df
 				if f&~7|j&~63:
@@ -162,15 +167,13 @@ def gen_moves(gm,ind,pos,lvalue,kll,hva,mhva,hmv,eg,op_mode,base_seed,dpth,lbuff
 							elif pp==_Q:mob[wb]+=mob_t[_OPNQ]-99
 					break
 				r=j>>3
-				if pp!=_P and pp!=_K:
-					if j in ring:
-						if j!=(wk if bbit else bk):mob[wb]+=att[pp-1]-99+krc[attc[wb]]-99;attc[wb]+=1 if attc[wb]<3 else 0
+				if ring_attack and j in ring:
+					if j!=(wk if bbit else bk):mob[wb]+=att[pp-1]-99+krc[attc[wb]]-99;attc[wb]+=1 if attc[wb]<3 else 0
 				q=b[j];qn=q^bbit
-				if pp==_P and(d==_NO or d==-_NO):
-					if q!=empt:mob[wb]+=mbt[96+qn]-99;break
+				if pawn_fwd and q!=empt:mob[wb]+=mbt[96+qn]-99;break
 				if qn<6:
 					if df or pp!=_P:
-						if df==0 and qn==_P and(pp==_R or pp==_Q):
+						if df==0 and qn==_P and isrq:
 							if pp==_R:mob[wb]+=mob_t[_SOPNR]-99
 							else:mob[wb]+=mob_t[_SOPNQ]-99
 						elif pp==_K and(wb==0 and(d>2 or r<6)or wb==1 and(d<-2 or r>1)):
@@ -188,7 +191,7 @@ def gen_moves(gm,ind,pos,lvalue,kll,hva,mhva,hmv,eg,op_mode,base_seed,dpth,lbuff
 						if q==empt and j!=kp and j!=ep and j!=kp-1 and j!=kp+1:break
 						if q!=empt:mob[0]+=mbt[p16+qn]-99
 					if p==_P and _A8<=j<=_H8:
-						for prom in range(1,5):v=value(lpst,i,j,prom,p,q,xor,eg,kp,ep,t);ind=ma(gm,ind,i<<8|j|prom-1<<6,v,lvalue,kll,hva,mhva,hmv,p,q,prom-1,empt)
+						for prom in range(1,5):v=value(lpst,i,j,prom,p,q,xor,eg,kp,ep,t);ind=ma(gm,ind,i<<8|j|prom-1<<6,v,lvalue,kll,hva,mhva,hmv,p,q,prom-1,empt,op_mode)
 						break
 				elif p==_BP:
 					if df:
@@ -196,11 +199,11 @@ def gen_moves(gm,ind,pos,lvalue,kll,hva,mhva,hmv,eg,op_mode,base_seed,dpth,lbuff
 						bp_files[f]=bp_files[f]|1<<r
 					break
 				else:mob[wb]+=mbt[p16+qn]-99
-				if not bbit:v=value(lpst,i,j,0,p,q,xor,eg,kp,ep,t);ind=ma(gm,ind,i<<8|j,v,lvalue,kll,hva,mhva,hmv,p,q,4,empt)
-				if qn^8<6 or pp==_P or pp==_K or pp==_N:break
+				if not bbit:v=value(lpst,i,j,0,p,q,xor,eg,kp,ep,t);ind=ma(gm,ind,i<<8|j,v,lvalue,kll,hva,mhva,hmv,p,q,4,empt,op_mode)
+				if crawler or qn^8<6:break
 				if bbit:continue
-				if i==_A1 and cwq and j<63 and b[j+_E]==_K:it=j+_E;jt=j+_W;tt=_K;v=value(lpst,it,jt,0,_K,6,xor,eg,kp,ep,tt);ind=ma(gm,ind,it<<8|jt,v,lvalue,kll,hva,mhva,hmv,p,q,4,empt);break
-				if i==_H1 and cke and j>0 and b[j+_W]==_K:it=j+_W;jt=j+_E;tt=_K;v=value(lpst,it,jt,0,_K,6,xor,eg,kp,ep,tt);ind=ma(gm,ind,it<<8|jt,v,lvalue,kll,hva,mhva,hmv,p,q,4,empt);break
+				if i==_A1 and cwq and j<63 and b[j+_E]==_K:it=j+_E;jt=j+_W;tt=_K;v=value(lpst,it,jt,0,_K,6,xor,eg,kp,ep,tt);ind=ma(gm,ind,it<<8|jt,v,lvalue,kll,hva,mhva,hmv,p,q,4,empt,op_mode);break
+				if i==_H1 and cke and j>0 and b[j+_W]==_K:it=j+_W;jt=j+_E;tt=_K;v=value(lpst,it,jt,0,_K,6,xor,eg,kp,ep,tt);ind=ma(gm,ind,it<<8|jt,v,lvalue,kll,hva,mhva,hmv,p,q,4,empt,op_mode);break
 	l=ind-l
 	if l:
 		moves=gm[ind-l:ind];moves.sort()

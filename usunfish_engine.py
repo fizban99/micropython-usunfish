@@ -14,7 +14,7 @@ gc.collect()
 BASE_SEED = randint(0, 0x3FFFFFFF)
 # Root indices of the opening table.
 _OP_IND = 1 if op[0]>>4==0 else 0
-_VARIATIONS = 8
+_VARIATIONS = 6 # Main variations with full depth. After those, there is only depth 1
 # Maximum number of moves to keep in the history
 _MAX_HIST = const(10)
 # Memory allocation for the move buffer
@@ -54,7 +54,7 @@ _NCANCEL = const(0)
 _QS = const(16)
 _QS_A = const(38)
 # Fixed target margin used by the deep null-move fuel probe (about two pawns).
-_NULL_MARGIN = const(-44)
+_NULL_MARGIN = const(-37)
 _RFP = const(35)
 _EVAL_ROUGHNESS = const(4)
 _ASP = const(16)
@@ -694,43 +694,53 @@ def bound(
             # non-pawn piece, moderate static imbalance, and at least one ply from
             # the root. The material guard reduces zugzwang and extreme-position risk.
             null_red = 0
-            null_ok = (
+            if (
                 not incheck & 4
                 and d > 2
                 and cn
+                and pdpth > 0 
                 and abs(sc) < 125
-                and pdpth > 0                
                 and any(0 < (p & 7) < 5 for p in board if not (p & 8))
-            )
-            if null_ok and d < 8 :
-                # Conventional null-move pruning for d=3..7: a fail-high cuts.
-                lwc = wc_bc_ep_kp
-                rotate(True)
-                res = bound(pos, 1-g, d-4 if (d>3 and eg==0) else d-3 , False, 0, mb, gm, ind, gmv, incheck, pdpth+1, gm_buf, req_d, max_time) # fmt: skip
-                rotate()
-                pos[2] = lwc
-                res = -((res & 0xFFFF) - 16384)
-                best = res if res > best else best
-                if res >= g:
-                    best_mv = 0
-                    break
-                if not match:
-                    mob = (pos[4] + 2) >> 2
-            elif null_ok:
-                # At d>=8, use null move only as a fixed-target "fuel" probe.
-                # It cannot cut off directly; success grants a one-ply reduction
-                # to subsequent real moves.
-                lwc = wc_bc_ep_kp
-                rotate(True)
-                target = sc + mb + _NULL_MARGIN
-                res = bound(pos, 1-target, max(0, d-7), False, 0, mb, gm, ind, gmv, incheck, pdpth+1, gm_buf, req_d, max_time) # fmt: skip
-                rotate()
-                res = -((res & 0xFFFF) - 16384)
-                pos[2] = lwc
-                if res >= sc + mb + (_NULL_MARGIN):
-                    null_red = 1
-                if not match:
-                    mob = (pos[4] + 2) >> 2
+            ):
+                if d < 8 :
+                    # Conventional null-move pruning for d=3..7: a fail-high cuts.
+                    lwc = wc_bc_ep_kp
+                    rotate(True)
+                    res = bound(pos, 1-g, d-4 if (d>3 and eg==0) else d-3 , False, 0, mb, gm, ind, gmv, incheck, pdpth+1, gm_buf, req_d, max_time) # fmt: skip
+                    rotate()
+                    pos[2] = lwc
+                    res = -((res & 0xFFFF) - 16384)
+                    # pos[4] contains the mobility of the current position
+                    mb2 = ((pos[4] + 2) >> 2) - mob + 1  
+                    res = res + mb2 - mb
+                    mb = mb2                
+                    best = res if res > best else best
+                    if res >= g:
+                        best_mv = 0
+                        # store mobility and incheck for next iteration
+                        if not match and best != _CANCEL and best >= g and (16 > od >= -16)  and pdpth < 16:                        
+                            s_tp(h, best_mv, best, pdpth, 0, od, 0x8000, (pos[4] + 2) >> 2, incheck)
+                        break
+                else:
+                    # At d>=7, use null move only as a fixed-target "fuel" probe.
+                    # It cannot cut off directly; success grants a one-ply reduction
+                    # to subsequent real moves.
+                    lwc = wc_bc_ep_kp
+                    rotate(True)
+                    target = sc + mb + _NULL_MARGIN
+                    res = bound(pos, 1-target, d-7, False, 0, mb, gm, ind, gmv, incheck, pdpth+1, gm_buf, req_d, max_time) # fmt: skip
+                    rotate()
+                    res = -((res & 0xFFFF) - 16384)
+                    pos[2] = lwc
+                    mb2 = ((pos[4] + 2) >> 2) - mob + 1 
+                    res = res + mb2 - mb 
+                    if res == _CANCEL:
+                        break                       
+                    if res >= target - mb2 + mb:
+                        null_red = min(2, (d - 2 ) >> 2)
+                    mb = mb2                
+
+
 
             if d == 0 and not incheck & 4:
                 best = sc + mb if sc + mb > best else best
@@ -744,7 +754,7 @@ def bound(
             # This is known as Internal Iterative Deepening (IID).
             # can_null=False, since we want to make sure we actually find a move.
             if not hmove and d > 2:
-                hmove = bound(pos, g, min(d - 2, 5), False, 0, 0, gm, ind, gmv, incheck, pdpth, gm_buf, req_d, max_time) # fmt: skip
+                hmove = bound(pos, g, min(d - 2, 5), False, 0, mb, gm, ind, gmv, incheck, pdpth, gm_buf, req_d, max_time) # fmt: skip
                 if hmove == _NCANCEL:
                     best = _CANCEL
                     break
@@ -874,7 +884,7 @@ def bound(
                     if val > 0 or (board[j] & 7) != 6:
                         lmr_red = 1
                     else:
-                        lmr_red = 1 + d // 4 
+                        lmr_red = 1 + d // 4
                     red = lmr_red if lmr_red > red else red
                 res = bound(pos, 1-g, od-1-red, True, best_mv, val + mb, gm, ind+l, None, incheck, pdpth+1, gm_buf, req_d, max_time) # fmt: skip
                 res = -((res & 0xFFFF)-16384)

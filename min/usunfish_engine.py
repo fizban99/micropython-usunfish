@@ -4,13 +4,12 @@ from usunfish_common import*
 seed(monotonic())
 import gc
 from usunfish_common import*
-import usunfish_gmv
 from usunfish_gmv import parse_sibl,makes_check,gen_moves,value
 import usunfish_gmv as ugmv
 gc.collect()
 BASE_SEED=randint(0,1073741823)
-_OP_IND2=const(0)
-_OP_IND=const(0)
+_OP_IND=1 if op[0]>>4==0 else 0
+_VARIATIONS=6
 _MAX_HIST=const(10)
 gm_buf=[0]*800
 history=list()
@@ -30,14 +29,16 @@ _CANCEL=const(16384)
 _NCANCEL=const(0)
 _QS=const(16)
 _QS_A=const(38)
-_FUT=const(10)
+_NULL_MARGIN=const(-37)
+_RFP=const(35)
 _EVAL_ROUGHNESS=const(4)
+_ASP=const(16)
 _MAX_DEPTH=const(20)
 _MAX_QS=const(8)
-PVALUES=b'\x00\x03\x03\x05\t\x00\x00'
 max_qs=_MAX_QS
 max_nodes=8000
 max_time=None
+soft_time=None
 t_kll=[0]*_MAX_DEPTH
 _T_SZS=const(128)
 T_SLOTS=16
@@ -121,7 +122,7 @@ def s_sc(tscd,tsch,i,mv,dr,best,h,fh,od):tscd[i<<1]=mv;tscd[(i<<1)+1]=fh|best+16
 def s_hmv(h_mv,h_va,mv,max_h_mv,w):
 	i=0;i=get_index(mv,h_mv,0,max_h_mv)
 	if i<0:
-		if max_h_mv<len(h_va):i=max_h_mv;max_h_mv+=1
+		if max_h_mv<len(h_va):i=max_h_mv;max_h_mv+=1;h_va[i]=0
 		else:
 			min_i=0;min_v=h_va[0]
 			for j in range(1,len(h_va)):
@@ -179,7 +180,7 @@ def g_sc(h,dr,od,board):
 	if i>=0:e=tscd[(i<<1)+1];tscd[(i<<1)+1]=e&33554431|iter<<25;mv=tscd[i<<1];position[4]=((mv>>14&1023)-512)*4-2;incheck=mv>>29<<2;mv=mv&16383
 	else:return 0,-_MT_UP,32768,0,0
 	sod=(e>>20&31)-16
-	if board[mv>>8]>5 or board[mv&63]<6 or board[mv>>8]==_P and mv>>8<mv&63:return 0,_MT_UP,0,0,0
+	if mv and(board[mv>>8]>5 or board[mv&63]<6 or board[mv>>8]==_P and mv>>8<mv&63):return 0,_MT_UP,0,0,0
 	if sod<od:return mv,-_MT_UP,32768,-1,incheck
 	fh=e&32768;best=(e&32767)-16384;return mv,best,fh,1,incheck
 def reset_pos(omv,sc,lwc_bc_ep_kp,dif,omb,h):
@@ -200,14 +201,14 @@ def bound(pos,g,od,cn,omv,val,gm,ind,gmv,incheck,pdpth,gm_buf,req_d,max_time):
 				if makes_check(kp+i,0,pos):ret,best=1,_MT_UP;break
 			if ret:break
 		nodes+=1
-		if 10*nodes>15*max_nodes or max_time and monotonic()-max_time>0:ret,best=1,_CANCEL;break
+		if nodes>3*max_nodes>>1 or not nodes%5 and(max_time and monotonic()-max_time>0):ret,best=1,_CANCEL;break
 		entry=None;hmove,e,fh,match,ret=g_sc(h,pdpth,od,board)
 		if fh:
 			if e>=g:ret,best,best_mv=1,e,hmove;break
 			elif match>0:hbest=e;best=e
 		elif e<g:ret,best=1,e;break
 		if match:
-			if match>0:ohmove=hmove
+			if match>0:ohmove=hmove;hbest=e
 			mb=(pos[4]+2>>2)-mob+1
 		else:mb=1
 		d=od if od>0 else 0
@@ -216,20 +217,34 @@ def bound(pos,g,od,cn,omv,val,gm,ind,gmv,incheck,pdpth,gm_buf,req_d,max_time):
 		if match:incheck=ret|incheck
 		elif makes_check(ksq&255,8,pos):incheck=incheck|4
 		if od<-mqs and not incheck&4:ret,best=1,sc+mb;break
+		rfp=_RFP+5*(eg>0)
+		if not incheck&4 and cn and(d==1 or d==2)and pdpth>2 and sc+mb-d*rfp>=g:ret,best=1,sc+mb;break
 		best=-_MT_UP;ret=0;break
 	if not ret:
 		while True:
-			if not incheck and d>2 and cn and abs(sc)<125 and any(0<p&7<5 for p in board if not p&8)and pdpth>0:
-				lwc=wc_bc_ep_kp;rotate(True);res=bound(pos,1-g,d-3,False,0,mb,gm,ind,gmv,incheck,pdpth+1,gm_buf,req_d,max_time);rotate();res=-((res&65535)-16384);pos[2]=lwc;best=res if res>best else best
-				if res>=g:best_mv=0;break
-				if not match:mob=pos[4]+2>>2
+			null_red=0
+			if not incheck&4 and d>2 and cn and pdpth>0 and abs(sc)<125 and any(0<p&7<5 for p in board if not p&8):
+				if d<8:
+					lwc=wc_bc_ep_kp;rotate(True);res=bound(pos,1-g,d-4 if d>3 and eg==0 else d-3,False,0,mb,gm,ind,gmv,incheck,pdpth+1,gm_buf,req_d,max_time);rotate();pos[2]=lwc;res=-((res&65535)-16384);mb2=(pos[4]+2>>2)-mob+1;res=res+mb2-mb;mb=mb2;best=res if res>best else best
+					if res>=g:
+						best_mv=0
+						if not match and best!=_CANCEL and best>=g and 16>od>=-16 and pdpth<16:s_tp(h,best_mv,best,pdpth,0,od,32768,pos[4]+2>>2,incheck)
+						break
+				else:
+					lwc=wc_bc_ep_kp;rotate(True);target=sc+mb+_NULL_MARGIN;res=bound(pos,1-target,d-7,False,0,mb,gm,ind,gmv,incheck,pdpth+1,gm_buf,req_d,max_time);rotate();res=-((res&65535)-16384);pos[2]=lwc;mb2=(pos[4]+2>>2)-mob+1;res=res+mb2-mb
+					if res==_CANCEL:break
+					if res>=target-mb2+mb:null_red=min(2,d-2>>2)
+					mb=mb2
 			if d==0 and not incheck&4:
 				best=sc+mb if sc+mb>best else best
 				if sc+mb>=g:best_mv=0;break
-			if not hmove and d>2:hmove=bound(pos,g,d-2,False,0,0,gm,ind,gmv,incheck,pdpth,gm_buf,req_d,max_time);hmove=hmove>>16
+			if not hmove and d>2:
+				hmove=bound(pos,g,min(d-2,5),False,0,mb,gm,ind,gmv,incheck,pdpth,gm_buf,req_d,max_time)
+				if hmove==_NCANCEL:best=_CANCEL;break
+				hmove=hmove>>16
 			val_lower=_QS-(d+(int(incheck>0)<<2))*_QS_A
 			if incheck&4:red=-1
-			else:red=0
+			else:red=null_red
 			if hmove!=0:
 				p=board[hmove>>8];t=p&7
 				if op_mode:tpst=pst[0]
@@ -256,18 +271,21 @@ def bound(pos,g,od,cn,omv,val,gm,ind,gmv,incheck,pdpth,gm_buf,req_d,max_time):
 				if od<0 and res+mgn<g or od<=-max_qs:best=res if res>best else best;break
 				j=best_mv&63;i=best_mv>>8
 				if not incheck&4 and omv and od<-_MAX_QS+2 and j!=63-(omv&63):continue
-				red=-1 if incheck&4 else 0
-				if not red and(j>7 or board[i]!=_P)and board[j]&7==6 and(d>2 and d<8 and pdpth>2 and res+(mgn<<2)+(d-3)*(abs(mb)+1)<g):best=res if res>best else best;break
-				if not red and(lmax-l>4 and d>3 and pdpth>0):
-					if val>0 or board[j]&7!=6:red=1
-					else:red=1+d//4
+				red=-1 if incheck&4 else null_red
+				if not incheck&4 and(j>7 or board[i]!=_P)and board[j]&7==6 and(d>2 and d<8 and pdpth>2 and res+(mgn<<2)+(d-3)*(abs(mb)+1)<g):best=res if res>best else best;break
+				if not incheck&4 and(lmax-l>4 and d>3 and pdpth>0):
+					if val>0 or board[j]&7!=6:lmr_red=1
+					else:lmr_red=1+d//4
+					red=lmr_red if lmr_red>red else red
 				res=bound(pos,1-g,od-1-red,True,best_mv,val+mb,gm,ind+l,None,incheck,pdpth+1,gm_buf,req_d,max_time);res=-((res&65535)-16384)
-				if red>0 and res>=g+5:res=bound(pos,1-g,od-1,True,best_mv,val+mb,gm,ind+l,None,incheck,pdpth+1,gm_buf,req_d,max_time);res=-((res&65535)-16384)
+				if red>0 and res>=g+5:
+					if res==_CANCEL:best=res;break
+					res=bound(pos,1-g,od-1,True,best_mv,val+mb,gm,ind+l,None,incheck,pdpth+1,gm_buf,req_d,max_time);res=-((res&65535)-16384)
 				best=res if res>best else best
 				if best>=g:break
 			break
 		if best==-_MT_UP:best_mv=0;best=-_MT_LW if incheck&4 else 0
-		if best>=g and(16>od>=-16 and best_mv!=0)and(cn or pdpth==0)and pdpth<16:s_tp(h,best_mv,best,pdpth,val,od,32768,pos[4]+2>>2,incheck)
+		if best!=_CANCEL and best>=g and(16>od>=-16 and best_mv!=0)and(cn or pdpth==0)and pdpth<16:s_tp(h,best_mv,best,pdpth,val,od,32768,pos[4]+2>>2,incheck)
 		if best<g and not best_mv and fh and hmove and 16>od>=-16 and pdpth<16:s_tp(h,hmove,best,pdpth,val,od,0,pos[4]+2>>2,incheck)
 		max_qs=mqs
 	reset_pos(omv,osc,lwc_bc_ep_kp,dif,omb,oh)
@@ -278,19 +296,17 @@ def mk_mv(mv):
 	if op_mode==1:
 		gm=g_m();gm=[m&16383 for m in gm];gm.reverse();mv=mv&16191;last_mv=gm.index(mv);mvs,_=parse_sibl(op_ind,ply-1,op);i=[i for(i,(mv,_))in enumerate(mvs)if mv==last_mv]
 		if i:op_ind=mvs[i[0]][1]
-		else:
-			op_mode=0
-			if ply==1:
-				mvs,_=parse_sibl(_OP_IND2,ply-1,op2);i=[i for(i,(mv,_))in enumerate(mvs)if mv==last_mv]
-				if i:op_ind=mvs[i[0]][1];op_mode=2
+		else:op_mode=0
 	if len(history)>_MAX_HIST:history.pop(0)
 	dif=move(mv,None,position);history.append(position[5]);return dif
 def g_next_move(op):
 	global op_ind,last_mv,op_mode,ply;i=op_ind;mvs,_=parse_sibl(i,ply,op)
 	if not mvs:op_mode=0;return 0
-	mv,_=mvs[randint(0,len(mvs)-1)];gm=g_m();mv=gm[-mv-1]&16383;return mv
-def search(gmv):
-	global nodes,req_d,tp_scored,tp_scoreh,max_d_sc,t_szs,op_ind,iter;global eg,max_qs,req_d,start_time;nodes=0
+	if ply==0:mv,_=mvs[randint(0,_VARIATIONS-1)]
+	else:mv,_=mvs[randint(0,len(mvs)-1)]
+	gm=g_m();mv=gm[-mv-1]&16383;return mv
+def search(gmv,depth_limit=0):
+	global nodes,req_d,tp_scored,tp_scoreh,max_d_sc,t_szs,op_ind,iter;global eg,max_qs,req_d,start_time,soft_time;nodes=0
 	if not gmv:gmv=g_mv()
 	_,_,_,pscore,mob,_=position
 	if op_mode==1:
@@ -299,14 +315,18 @@ def search(gmv):
 	elif op_mode==2 and ply==1:
 		last_mv=g_next_move(op2)
 		if last_mv!=0:yield(0,pscore-4,pscore,last_mv);return
-	guess=pscore+(mob+2>>2)+1;iter=0;eval_roughness=_EVAL_ROUGHNESS-1
-	for req_d in range(1,_MAX_DEPTH+1):
-		margin=16+max(0,req_d-4)*4;lower=guess-margin;upper=guess+margin
+	guess=pscore+(mob+2>>2)+1;iter=0;eval_roughness=_EVAL_ROUGHNESS-1;last_probe_time=0;max_depth=depth_limit if depth_limit else _MAX_DEPTH
+	for req_d in range(1,max_depth+1):
+		margin=_ASP+max(0,req_d-4)*4;lower=guess-margin;upper=guess+margin
 		if lower<-_MT_LW:lower=-_MT_LW
 		if upper>_MT_LW:upper=_MT_LW
-		g=guess;widened=False;eval_dist=upper-lower
+		g=guess;widened=False;eval_dist=upper-lower;first_probe=True;n_iter=0;total_time=0
 		while eval_dist>eval_roughness:
-			res=bound(position,g,req_d,False,0,0,gm_buf,0,gmv,0,0,gm_buf,req_d,max_time)
+			probe_start=monotonic()
+			if soft_time and last_probe_time:
+				predicted=last_probe_time*2
+				if probe_start+predicted>=soft_time:return
+			res=bound(position,g,req_d,False,0,0,gm_buf,0,gmv,0,0,gm_buf,req_d,max_time);total_time+=monotonic()-probe_start;n_iter+=1;last_probe_time=total_time//n_iter
 			if res==_NCANCEL:yield(req_d,g,_NCANCEL,0);return
 			score,best_mv=(res&65535)-16384,res>>16
 			if score>=g:
@@ -315,7 +335,7 @@ def search(gmv):
 			else:
 				upper=score
 				if upper<=lower and not widened:lower=-_MT_LW;widened=True
-			eval_dist=upper-lower;yield(req_d,g,score,best_mv);g=(lower+upper+1)//2;iter=iter+1&31
+			eval_dist=upper-lower;yield(req_d,g,score,best_mv);g=(lower+upper+1)//2;iter=iter+1&31;first_probe=False
 		guess=(lower+upper+1)//2;depth_roughness=_EVAL_ROUGHNESS+max(0,req_d-4)//4;eval_roughness=depth_roughness
 		if eval_roughness>6:eval_roughness=6
 def g_m():turn=position[2]>>20;gm=gm_buf;l=gen_moves(gm,0,position,-_MT_LW,0,h_va[turn],max_h_mv[turn],h_mv[turn],eg,op_mode,BASE_SEED,100);gm=gm[:l];return gm

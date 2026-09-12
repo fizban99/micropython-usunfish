@@ -99,14 +99,14 @@ These are some technical details about the features implemented in this Sunfish-
   - Hash generation includes startup randomness, adding a bit of non-determinism.
 
 - **Compact hardcoded opening book**
-  - Original Sunfish did not include hardcoded openings. This version includes a compact nibble-encoded opening book. The main book contains about 1,768 plies derived from `Balsa_270423.pgn` and `Unique v110225`.
+  - Original Sunfish did not include hardcoded openings. This version includes a compact nibble-encoded opening book. The main book contains about 1,768 plies derived from [`Balsa_500.pgn`](https://sites.google.com/site/computerschess/balsa-opening-test-suite) and [`Unique v110225`](https://sites.google.com/site/computerschess/unique-suite-110225).
   - A secondary reply book provides answers to uncommon first moves using the [`400 moves.pgn`](https://www.scacchi64.com/downloads.html) file.
 
 - **Strength control**
   - Playing strength is controlled by the number of evaluated nodes.
   - Level 0 is an extremely easy level.
   - Levels 1–7 range from 125 nodes to 8000 nodes.
-  - On a standard ESP32, level 7 takes around 60 seconds per move.
+  - On a standard ESP32/ESP32S3, level 7 takes around 20 seconds per move.
 
 - **UCI compatibility**
   - Supports UCI operation.
@@ -123,6 +123,7 @@ These are some technical details about the features implemented in this Sunfish-
     - [MinimalChess](https://github.com/lithander/MinimalChessEngine)
     - [4ku](https://github.com/kz04px/4ku) 
     - [MadChess](https://www.madchess.net/)
+    - [Inside Rebel: How Rebel plays chess](./docs/Inside%20Rebel.pdf)
 
 
 # Installation on a MicroPython-compatible board
@@ -155,6 +156,11 @@ Castling is done by moving the King, e.g. `e1g1` to castle on the King side - th
 automatically. Pawn promotion - always to Queen - occurs automatically. The machine can do _en passant_
 captures. 
 If an invalid move is entered, the engine prompts the user to try again.
+
+There is also `sunfish_fancy.py`, which, if your device supports unicode, and your terminal supports unicode colors (e.g. Thonny in terminal emulation) you can get a nicer represenation:
+<p align="center">
+  <img src="./img/uSunfish_fancy.png" />
+</p>
 
 ## Limitations
 

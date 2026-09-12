@@ -9,12 +9,13 @@ from usunfish_engine import g_m, rotate, value, parse, move, position
 
 
 MAX_OP_D = 11
-MAX_VARIATIONS = 7
+MAX_VARIATIONS = 19 # this value can be used to reduce the number of variations included
+                    # , reducing the book size
 max_children = 0
 tree = {}
 exceeds_variations  = 0
 prev_variations = 0
-for book in ["SuperGM_4mvs.pgn", "400Book.pgn" ]:
+for book in ["Balsa_v500.pgn", "400Book.pgn" ]:
     openings = []
     openings2 = []
     moves = []
@@ -49,7 +50,7 @@ for book in ["SuperGM_4mvs.pgn", "400Book.pgn" ]:
                 if i >MAX_OP_D:
                     break
 
-                if book == "400Book.pgn" and mv.uci().lower() in ("c2c4", "d2d4", "e2e4","g1f3", "f2f4","g2g3","b2b3","b1c3"):
+                if book == "400Book.pgn" and mv.uci().lower() in ("c2c4", "d2d4", "e2e4","g1f3", "f2f4","g2g3"): #,"b2b3","b1c3"):
                      continue
                 gmoves = [(mv>>14, mv&0x3FFF) for mv in g_m()]
                 if i % 2 == 0:
@@ -141,7 +142,7 @@ if len(tree) < 4:
 else:
     openings_comp.append(3)
     openings_comp.append(len(tree)-4)
-with open(f"openings_comp.txt","w") as f:
+with open(Path(__file__).resolve().parent / "openings_comp.txt","w") as f:
     print_tree(tree, f=f)
 if len(openings_comp) % 2==1:
     openings_comp.insert(0,0)
